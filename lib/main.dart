@@ -24,7 +24,7 @@ class MyApp extends StatelessWidget {
         primaryColor: Colors.red,
         scaffoldBackgroundColor: Colors.black,
       ),
-      home: VideoPlayerScreen(video: TestData.oppenheimer),
+      home: VideoPlayerScreen(video: TestData.breakingBadSeries),
     );
   }
 }

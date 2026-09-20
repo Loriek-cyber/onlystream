@@ -39,26 +39,45 @@ class Video {
 
   // Factory constructor for parsing API response
   factory Video.fromJson(Map<String, dynamic> json) {
+    final mediaType = json['media_type'] as String? ?? 'movie';
+    final isTv = mediaType == 'tv' || mediaType == 'series';
+    final hasNext = json['has_next'] as bool? ?? false;
+
+    // Current episode fields (supporting both new and old API key schemas)
+    final season =
+        json['season'] as int? ?? json['current_season'] as int? ?? 1;
+    final episodeNum =
+        json['episode'] as int? ?? json['current_episode'] as int? ?? 1;
+    final episodeTitle =
+        json['episode_name'] as String? ?? json['episode_title'] as String?;
+
+    // Next episode fields
+    final nextSeason = json['next_season'] as int?;
+    final nextEpNum = json['next_episode'] as int?;
+    final nextEpTitle = json['next_episode_title'] as String?;
+
     return Video(
-      id: json['tmdb_id'] as int,
-      title: json['title'] as String? ?? 'Unknown',
-      type: json['media_type'] as String,
+      id: json['tmdb_id'] as int? ?? 0,
+      title: json['series_name'] as String? ??
+          json['title'] as String? ??
+          'Unknown',
+      type: isTv ? 'series' : mediaType,
       audioTracks: [],
-      currentEpisode: json['media_type'] == 'tv'
+      currentEpisode: isTv
           ? Episode(
-              season: json['current_season'] as int,
-              number: json['current_episode'] as int,
-              title: json['episode_title'] as String?,
+              season: season,
+              number: episodeNum,
+              title: episodeTitle,
             )
           : null,
-      nextEpisode: json['media_type'] == 'tv' && json['has_next'] == true
+      nextEpisode: isTv && hasNext && nextSeason != null && nextEpNum != null
           ? Episode(
-              season: json['next_season'] as int,
-              number: json['next_episode'] as int,
-              title: json['next_episode_title'] as String?,
+              season: nextSeason,
+              number: nextEpNum,
+              title: nextEpTitle,
             )
           : null,
-      hasNext: json['has_next'] as bool? ?? false,
+      hasNext: hasNext,
     );
   }
 

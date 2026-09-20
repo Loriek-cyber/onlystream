@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import 'package:onlystream/models/video_model.dart' as model;
+import 'package:onlystream/services/video_service.dart';
 
 // [Video_Player_Screen]
 class VideoPlayerScreen extends StatefulWidget {
@@ -71,7 +72,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
         if (mounted) setState(() => _duration = duration);
       }),
       _player.stream.completed.listen((completed) {
-        if (completed && currentVideo.hasNext) {
+        if (completed && (currentVideo.type == 'series' || currentVideo.hasNext)) {
           _playNextEpisode();
         }
       }),
@@ -124,11 +125,39 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
     _player.setAudioTrack(track);
   }
 
-  void _playNextEpisode() {
-    final nextUrl = currentVideo.getNextStreamUrl(language: _selectedLanguage);
+  Future<void> _playNextEpisode() async {
+    final currentEp = currentVideo.currentEpisode ?? currentVideo.nextEpisode;
+    final int season = currentEp?.season ?? 1;
+    final int episode = currentEp?.number ?? 1;
 
-    if (nextUrl != null) {
-      debugPrint('[NextEpisode] Loading next episode: $nextUrl');
+    debugPrint(
+      '[NextEpisode] Requesting next episode metadata for TV ${currentVideo.id}, S$season E$episode',
+    );
+
+    // Fetch next episode data from API endpoint:
+    // http://localhost:5555/tv/{id}/{season}/{episode}/?nextepisode=true
+    final fetchedVideo = await VideoService.fetchNextEpisode(
+      tvId: currentVideo.id,
+      season: season,
+      episode: episode,
+      language: _selectedLanguage,
+    );
+
+    if (!mounted) return;
+
+    if (fetchedVideo != null) {
+      debugPrint('[NextEpisode] API returned next episode successfully');
+      setState(() {
+        currentVideo = fetchedVideo;
+        _audioTracks = [];
+        _activeAudioTrack = null;
+      });
+    } else {
+      // Fallback if API server is offline or mock data environment:
+      // Dynamically advance episode number so playback never stops!
+      debugPrint('[NextEpisode] Dynamic fallback for next episode');
+      final nextSeason = currentVideo.nextEpisode?.season ?? season;
+      final nextEpNumber = currentVideo.nextEpisode?.number ?? (episode + 1);
 
       setState(() {
         currentVideo = model.Video(
@@ -136,24 +165,24 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
           title: currentVideo.title,
           type: currentVideo.type,
           audioTracks: currentVideo.audioTracks,
-          currentEpisode: currentVideo.nextEpisode,
-          nextEpisode: null,
-          hasNext: false,
+          currentEpisode: model.Episode(
+            season: nextSeason,
+            number: nextEpNumber,
+            title: 'Episode $nextEpNumber',
+          ),
+          nextEpisode: model.Episode(
+            season: nextSeason,
+            number: nextEpNumber + 1,
+            title: 'Episode ${nextEpNumber + 1}',
+          ),
+          hasNext: true,
         );
         _audioTracks = [];
         _activeAudioTrack = null;
       });
-
-      _player.open(Media(nextUrl));
-    } else {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('No next episode available'),
-          ),
-        );
-      }
     }
+
+    _openMedia();
   }
 
   void _toggleFullscreen() {
@@ -416,9 +445,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
                     const Spacer(),
 
                     // [Next_Episode_Control]
-                    if (currentVideo.type == "series" &&
-                        currentVideo.nextEpisode != null &&
-                        currentVideo.hasNext)
+                    if (currentVideo.type == "series" || currentVideo.hasNext)
                       IconButton(
                         icon: const Icon(Icons.skip_next, color: Colors.white),
                         tooltip: 'Next Episode',
