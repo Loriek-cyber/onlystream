@@ -1,12 +1,14 @@
 import 'package:onlystream/utils/constants.dart';
 
+// [Audio_Track_Model]
 class AudioTrack {
-  final String language; // "it", "en"
-  final String code; // "it", "en" (per le query)
+  final String language; // Language name ("Italiano", "English")
+  final String code; // Language ISO code ("it", "en")
 
   AudioTrack({required this.language, required this.code});
 }
 
+// [Episode_Model]
 class Episode {
   final int season;
   final int number;
@@ -15,10 +17,11 @@ class Episode {
   Episode({required this.season, required this.number, this.title});
 }
 
+// [Video_Model]
 class Video {
   final int id;
   final String title;
-  final String type; // "movie" o "series"
+  final String type; // "movie" or "series"
   final List<AudioTrack> audioTracks;
   final Episode? currentEpisode;
   final Episode? nextEpisode;
@@ -34,7 +37,7 @@ class Video {
     this.hasNext = false,
   });
 
-  // Factory constructor per parsare la risposta API
+  // Factory constructor for parsing API response
   factory Video.fromJson(Map<String, dynamic> json) {
     return Video(
       id: json['tmdb_id'] as int,
@@ -59,8 +62,8 @@ class Video {
     );
   }
 
-  /// Costruisci l'URL dello stream M3U8/HLS.
-  /// Il backend dovrebbe restituire un playlist .m3u8
+  /// Construct the M3U8/HLS stream URL.
+  /// The backend returns an .m3u8 playlist.
   String getStreamUrl({String language = 'it'}) {
     if (type == "movie") {
       return "${AppConstants.baseUrl}/movie/$id/?lang=$language";
@@ -71,7 +74,7 @@ class Video {
     }
   }
 
-  // Metodo helper: ottieni l'URL dell'episodio successivo
+  /// Helper method: get next episode stream URL.
   String? getNextStreamUrl({String language = 'it'}) {
     if (!hasNext || nextEpisode == null) return null;
 

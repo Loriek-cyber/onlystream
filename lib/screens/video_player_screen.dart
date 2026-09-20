@@ -6,6 +6,7 @@ import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import 'package:onlystream/models/video_model.dart' as model;
 
+// [Video_Player_Screen]
 class VideoPlayerScreen extends StatefulWidget {
   final model.Video video;
 
@@ -16,13 +17,13 @@ class VideoPlayerScreen extends StatefulWidget {
 }
 
 class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
+  // [State_Variables]
   late model.Video currentVideo;
 
-  // media_kit player e controller
   late final Player _player;
   late final VideoController _videoController;
 
-  String _selectedLanguage = 'it';
+  final String _selectedLanguage = 'it';
 
   bool _isPlaying = false;
   bool _isBuffering = false;
@@ -34,14 +35,11 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
   Duration _position = Duration.zero;
   Duration _duration = Duration.zero;
 
-  // Tracce audio e sottotitoli dal player
   List<AudioTrack> _audioTracks = [];
   List<SubtitleTrack> _subtitleTracks = [];
   AudioTrack? _activeAudioTrack;
 
   Timer? _hideControlsTimer;
-
-  // Sottoscrizioni stream
   final List<StreamSubscription> _subscriptions = [];
 
   @override
@@ -49,7 +47,6 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
     super.initState();
     currentVideo = widget.video;
 
-    // Crea il player e il video controller
     _player = Player();
     _videoController = VideoController(_player);
 
@@ -58,6 +55,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
     _startHideControlsTimer();
   }
 
+  // [Stream_Listeners]
   void _setupListeners() {
     _subscriptions.addAll([
       _player.stream.playing.listen((playing) {
@@ -83,11 +81,11 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
             _audioTracks = tracks.audio;
             _subtitleTracks = tracks.subtitle;
           });
-          debugPrint('🔊 Tracce audio: ${tracks.audio.length}');
+          debugPrint('[StreamTracks] Audio tracks count: ${tracks.audio.length}');
           for (final t in tracks.audio) {
-            debugPrint('  └─ ${t.title ?? t.language ?? t.id}');
+            debugPrint('[StreamTracks]   - ${t.title ?? t.language ?? t.id}');
           }
-          debugPrint('📝 Tracce sottotitoli: ${tracks.subtitle.length}');
+          debugPrint('[StreamTracks] Subtitle tracks count: ${tracks.subtitle.length}');
         }
       }),
       _player.stream.track.listen((track) {
@@ -96,7 +94,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
         }
       }),
       _player.stream.error.listen((error) {
-        debugPrint('❌ Errore player: $error');
+        debugPrint('[PlayerError] $error');
         if (mounted) {
           setState(() {
             _hasError = true;
@@ -107,10 +105,11 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
     ]);
   }
 
+  // [Media_Control_Methods]
   void _openMedia() {
     final streamUrl = currentVideo.getStreamUrl(language: _selectedLanguage);
-    debugPrint('🎥 Apertura stream M3U8/HLS');
-    debugPrint('🔗 URL: $streamUrl');
+    debugPrint('[MediaStream] Opening M3U8/HLS stream');
+    debugPrint('[MediaStream] URL: $streamUrl');
 
     setState(() {
       _hasError = false;
@@ -120,21 +119,8 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
     _player.open(Media(streamUrl));
   }
 
-  void _changeLanguage(String language) {
-    debugPrint('🌐 Cambio lingua a: ${language.toUpperCase()}');
-
-    setState(() {
-      _selectedLanguage = language;
-      _audioTracks = [];
-      _activeAudioTrack = null;
-    });
-
-    final newStreamUrl = currentVideo.getStreamUrl(language: language);
-    _player.open(Media(newStreamUrl));
-  }
-
   void _changeAudioTrack(AudioTrack track) {
-    debugPrint('🔊 Cambio traccia audio a: ${track.title ?? track.id}');
+    debugPrint('[AudioTrack] Changing audio track to: ${track.title ?? track.id}');
     _player.setAudioTrack(track);
   }
 
@@ -142,7 +128,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
     final nextUrl = currentVideo.getNextStreamUrl(language: _selectedLanguage);
 
     if (nextUrl != null) {
-      debugPrint('[Player] Avvio episodio successivo: $nextUrl');
+      debugPrint('[NextEpisode] Loading next episode: $nextUrl');
 
       setState(() {
         currentVideo = model.Video(
@@ -163,7 +149,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Nessun episodio successivo disponibile'),
+            content: Text('No next episode available'),
           ),
         );
       }
@@ -220,42 +206,25 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
       sub.cancel();
     }
     _player.dispose();
-    // Ripristina orientamento
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     SystemChrome.setPreferredOrientations(DeviceOrientation.values);
     super.dispose();
   }
 
-  // ═══════════════════════════════════════════════
-  //  BUILD
-  // ═══════════════════════════════════════════════
-
+  // [UI_Build]
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.black,
       body: SafeArea(
-        child: _isFullscreen
-            ? _buildPlayer()
-            : SingleChildScrollView(
-                child: Column(
-                  children: [
-                    _buildPlayer(),
-                    _buildVideoInfo(),
-                    _buildLanguageSelector(),
-                    const SizedBox(height: 16),
-                    _buildAudioTrackSelector(),
-                    const SizedBox(height: 16),
-                    _buildNextEpisodeButton(),
-                    const SizedBox(height: 16),
-                  ],
-                ),
-              ),
+        child: Center(
+          child: _buildPlayer(),
+        ),
       ),
     );
   }
 
-  // 🎬 PLAYER
+  // [Player_Container]
   Widget _buildPlayer() {
     return GestureDetector(
       onTap: _toggleControls,
@@ -263,9 +232,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
         aspectRatio: 16 / 9,
         child: Stack(
           children: [
-            // Sfondo nero
             Container(color: Colors.black),
-            // Errore
             if (_hasError)
               Center(
                 child: Padding(
@@ -282,7 +249,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
                       Text(
                         _errorMessage.isNotEmpty
                             ? _errorMessage
-                            : 'Errore nel caricamento del video',
+                            : 'Error loading video stream',
                         style: const TextStyle(
                           color: Colors.white70,
                           fontSize: 14,
@@ -293,7 +260,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
                       ElevatedButton.icon(
                         onPressed: _openMedia,
                         icon: const Icon(Icons.refresh),
-                        label: const Text('Riprova'),
+                        label: const Text('Retry'),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.red,
                         ),
@@ -302,13 +269,10 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
                   ),
                 ),
               ),
-            // Video
             if (!_hasError)
               Video(controller: _videoController, controls: NoVideoControls),
-            // Buffering indicator
             if (!_hasError && _isBuffering)
               const Center(child: CircularProgressIndicator(color: Colors.red)),
-            // Overlay controlli
             if (!_hasError && _showControls)
               AnimatedOpacity(
                 opacity: 1.0,
@@ -321,168 +285,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
     );
   }
 
-  // 📺 INFO VIDEO
-  Widget _buildVideoInfo() {
-    return Padding(
-      padding: const EdgeInsets.all(16.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            currentVideo.title,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          if (currentVideo.type == "series" &&
-              currentVideo.currentEpisode != null)
-            Padding(
-              padding: const EdgeInsets.only(top: 8.0),
-              child: Text(
-                "S${currentVideo.currentEpisode!.season.toString().padLeft(2, '0')}E${currentVideo.currentEpisode!.number.toString().padLeft(2, '0')} - ${currentVideo.currentEpisode!.title ?? 'Episodio'}",
-                style: const TextStyle(color: Colors.grey, fontSize: 14),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-
-  // 🌐 SELEZIONE LINGUA (dal modello Video)
-  Widget _buildLanguageSelector() {
-    if (currentVideo.audioTracks.isEmpty) return const SizedBox.shrink();
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Lingua audio:',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 14,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-          const SizedBox(height: 8),
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: currentVideo.audioTracks
-                  .map(
-                    (track) => Padding(
-                      padding: const EdgeInsets.only(right: 8),
-                      child: ElevatedButton(
-                        onPressed: () => _changeLanguage(track.code),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: _selectedLanguage == track.code
-                              ? Colors.red
-                              : Colors.grey[700],
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                        ),
-                        child: Text(
-                          track.language,
-                          style: const TextStyle(color: Colors.white),
-                        ),
-                      ),
-                    ),
-                  )
-                  .toList(),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // 🔊 SELEZIONE TRACCIA AUDIO (dal player - tracce nel file M3U8)
-  Widget _buildAudioTrackSelector() {
-    // Filtra la traccia "no" (disattiva) e "auto"
-    final tracks = _audioTracks
-        .where((t) => t != AudioTrack.no() && t != AudioTrack.auto())
-        .toList();
-    if (tracks.isEmpty) return const SizedBox.shrink();
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Traccia audio (stream):',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 14,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-          const SizedBox(height: 8),
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: tracks
-                  .map(
-                    (track) => Padding(
-                      padding: const EdgeInsets.only(right: 8),
-                      child: ElevatedButton(
-                        onPressed: () => _changeAudioTrack(track),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: _activeAudioTrack == track
-                              ? Colors.red
-                              : Colors.grey[700],
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                        ),
-                        child: Text(
-                          track.title ?? track.language ?? 'Audio ${track.id}',
-                          style: const TextStyle(color: Colors.white),
-                        ),
-                      ),
-                    ),
-                  )
-                  .toList(),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildNextEpisodeButton() {
-    if (currentVideo.type != "series" ||
-        currentVideo.nextEpisode == null ||
-        !currentVideo.hasNext) {
-      return const SizedBox.shrink();
-    }
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16.0),
-      child: SizedBox(
-        width: double.infinity,
-        child: ElevatedButton.icon(
-          onPressed: _playNextEpisode,
-          icon: const Icon(Icons.skip_next),
-          label: Text(
-            "Prossimo: S${currentVideo.nextEpisode!.season.toString().padLeft(2, '0')}E${currentVideo.nextEpisode!.number.toString().padLeft(2, '0')}",
-          ),
-          style: ElevatedButton.styleFrom(
-            backgroundColor: Colors.red,
-            padding: const EdgeInsets.symmetric(vertical: 12),
-            textStyle: const TextStyle(fontSize: 16),
-          ),
-        ),
-      ),
-    );
-  }
-
-  // ═══════════════════════════════════════════════
-  //  OVERLAY CONTROLLI
-  // ═══════════════════════════════════════════════
-
+  // [Player_Overlay_Controls]
   Widget _buildPlayerControls() {
     return Container(
       decoration: const BoxDecoration(
@@ -500,7 +303,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          // Top bar
+          // [Top_Bar]
           Padding(
             padding: const EdgeInsets.all(12.0),
             child: Row(
@@ -530,7 +333,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
             ),
           ),
 
-          // Center - Play/Pause
+          // [Center_Play_Pause_Button]
           IconButton(
             iconSize: 64,
             icon: Icon(
@@ -543,11 +346,11 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
             },
           ),
 
-          // Bottom bar - Seek + controlli
+          // [Bottom_Bar]
           Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // Seek bar
+              // [Seek_Bar]
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16.0),
                 child: Row(
@@ -595,7 +398,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
                   ],
                 ),
               ),
-              // Bottom controls
+              // [Bottom_Action_Controls]
               Padding(
                 padding: const EdgeInsets.only(
                   left: 16.0,
@@ -604,7 +407,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
                 ),
                 child: Row(
                   children: [
-                    // Volume
+                    // [Volume_Control]
                     IconButton(
                       icon: const Icon(Icons.volume_up, color: Colors.white),
                       onPressed: () => _player.setVolume(100.0),
@@ -612,13 +415,31 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
 
                     const Spacer(),
 
-                    // Sottotitoli
+                    // [Next_Episode_Control]
+                    if (currentVideo.type == "series" &&
+                        currentVideo.nextEpisode != null &&
+                        currentVideo.hasNext)
+                      IconButton(
+                        icon: const Icon(Icons.skip_next, color: Colors.white),
+                        tooltip: 'Next Episode',
+                        onPressed: _playNextEpisode,
+                      ),
+
+                    // [Audio_Track_Control]
+                    IconButton(
+                      icon: const Icon(Icons.audiotrack, color: Colors.white),
+                      tooltip: 'Audio Track',
+                      onPressed: _showAudioTracksDialog,
+                    ),
+
+                    // [Subtitles_Control]
                     IconButton(
                       icon: const Icon(Icons.subtitles, color: Colors.white),
+                      tooltip: 'Subtitles',
                       onPressed: _showSubtitlesDialog,
                     ),
 
-                    // Fullscreen
+                    // [Fullscreen_Control]
                     IconButton(
                       icon: Icon(
                         _isFullscreen
@@ -638,8 +459,53 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
     );
   }
 
+  // [Audio_Tracks_Dialog]
+  void _showAudioTracksDialog() {
+    final tracks = _audioTracks
+        .where((t) => t != AudioTrack.no() && t != AudioTrack.auto())
+        .toList();
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: Colors.grey[900],
+        title: const Text('Audio Track', style: TextStyle(color: Colors.white)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: tracks.isEmpty
+              ? [
+                  const Padding(
+                    padding: EdgeInsets.all(8.0),
+                    child: Text(
+                      'No audio tracks available',
+                      style: TextStyle(color: Colors.white70),
+                    ),
+                  )
+                ]
+              : tracks
+                  .map(
+                    (track) => ListTile(
+                      title: Text(
+                        track.title ?? track.language ?? 'Audio ${track.id}',
+                        style: const TextStyle(color: Colors.white),
+                      ),
+                      trailing: _activeAudioTrack == track
+                          ? const Icon(Icons.check, color: Colors.red)
+                          : null,
+                      onTap: () {
+                        _changeAudioTrack(track);
+                        Navigator.pop(context);
+                      },
+                    ),
+                  )
+                  .toList(),
+        ),
+      ),
+    );
+  }
+
+  // [Subtitles_Dialog]
   void _showSubtitlesDialog() {
-    // Filtra la traccia "no" e "auto"
     final tracks = _subtitleTracks
         .where((t) => t != SubtitleTrack.no() && t != SubtitleTrack.auto())
         .toList();
@@ -648,13 +514,13 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: Colors.grey[900],
-        title: const Text('Sottotitoli', style: TextStyle(color: Colors.white)),
+        title: const Text('Subtitles', style: TextStyle(color: Colors.white)),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
               title: const Text(
-                'Disattiva',
+                'Disable',
                 style: TextStyle(color: Colors.white),
               ),
               onTap: () {

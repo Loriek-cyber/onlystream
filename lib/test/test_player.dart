@@ -1,8 +1,8 @@
 import 'package:onlystream/models/video_model.dart';
 
-/// Dati di test per lo sviluppo
+// [Test_Data]
 class TestData {
-  // Serie TV: Breaking Bad
+  // TV Series: Breaking Bad
   static final Video breakingBadSeries = Video(
     id: 1396,
     title: 'Breaking Bad',
@@ -16,7 +16,7 @@ class TestData {
     hasNext: true,
   );
 
-  // Film: Oppenheimer
+  // Movie: Oppenheimer
   static final Video oppenheimer = Video(
     id: 872585,
     title: 'Oppenheimer',
@@ -27,7 +27,7 @@ class TestData {
     ],
   );
 
-  // Serie TV: Stranger Things
+  // TV Series: Stranger Things
   static final Video strangerThings = Video(
     id: 66732,
     title: 'Stranger Things',

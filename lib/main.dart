@@ -9,6 +9,7 @@ void main() {
   runApp(const MyApp());
 }
 
+// [Main_Application]
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
 
@@ -23,10 +24,7 @@ class MyApp extends StatelessWidget {
         primaryColor: Colors.red,
         scaffoldBackgroundColor: Colors.black,
       ),
-      home: VideoPlayerScreen(video: TestData.breakingBadSeries),
-      // Prova altri video:
-      // home: VideoPlayerScreen(video: TestData.oppenheimer),
-      // home: VideoPlayerScreen(video: TestData.strangerThings),
+      home: VideoPlayerScreen(video: TestData.oppenheimer),
     );
   }
 }
