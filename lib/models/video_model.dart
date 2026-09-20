@@ -59,7 +59,8 @@ class Video {
     );
   }
 
-  // Metodo helper: costruisci l'URL dello stream
+  /// Costruisci l'URL dello stream M3U8/HLS.
+  /// Il backend dovrebbe restituire un playlist .m3u8
   String getStreamUrl({String language = 'it'}) {
     if (type == "movie") {
       return "${AppConstants.baseUrl}/movie/$id/?lang=$language";

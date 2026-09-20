@@ -2,7 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_vlc_player/flutter_vlc_player.dart';
+import 'package:media_kit/media_kit.dart';
+import 'package:media_kit_video/media_kit_video.dart';
 import 'package:onlystream/models/video_model.dart' as model;
 
 class VideoPlayerScreen extends StatefulWidget {
@@ -16,128 +17,132 @@ class VideoPlayerScreen extends StatefulWidget {
 
 class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
   late model.Video currentVideo;
-  VlcPlayerController? _vlcPlayerController;
+
+  // media_kit player e controller
+  late final Player _player;
+  late final VideoController _videoController;
 
   String _selectedLanguage = 'it';
-  Map<int, String> _availableAudioTracks = {};
-  int? _selectedAudioTrackId;
 
   bool _isPlaying = false;
   bool _isBuffering = false;
   bool _showControls = true;
   bool _isFullscreen = false;
+  bool _hasError = false;
+  String _errorMessage = '';
 
   Duration _position = Duration.zero;
   Duration _duration = Duration.zero;
 
+  // Tracce audio e sottotitoli dal player
+  List<AudioTrack> _audioTracks = [];
+  List<SubtitleTrack> _subtitleTracks = [];
+  AudioTrack? _activeAudioTrack;
+
   Timer? _hideControlsTimer;
+
+  // Sottoscrizioni stream
+  final List<StreamSubscription> _subscriptions = [];
 
   @override
   void initState() {
     super.initState();
     currentVideo = widget.video;
-    _initializePlayer();
-  }
 
-  void _initializePlayer() {
-    final streamUrl = currentVideo.getStreamUrl(language: _selectedLanguage);
-    debugPrint('🎥 Inizializzazione VLC Player con URL: $streamUrl');
+    // Crea il player e il video controller
+    _player = Player();
+    _videoController = VideoController(_player);
 
-    _vlcPlayerController = VlcPlayerController.network(
-      streamUrl,
-      hwAcc: HwAcc.full,
-      autoPlay: true,
-      options: VlcPlayerOptions(
-        advanced: VlcAdvancedOptions([
-          VlcAdvancedOptions.fileCaching(5000),
-          VlcAdvancedOptions.networkCaching(5000),
-        ]),
-        http: VlcHttpOptions([
-          VlcHttpOptions.httpUserAgent('VLC/3.0.0'),
-        ]),
-        subtitle: VlcSubtitleOptions([
-          VlcSubtitleOptions.boldStyle(true),
-          VlcSubtitleOptions.fontSize(30),
-        ]),
-      ),
-    );
-
-    _vlcPlayerController!.addListener(_onPlayerValueChanged);
-
-    _vlcPlayerController!.addOnInitListener(() {
-      debugPrint('✅ VLC Player inizializzato');
-      _loadAudioTracks();
-    });
-
+    _setupListeners();
+    _openMedia();
     _startHideControlsTimer();
   }
 
-  void _onPlayerValueChanged() {
-    if (!mounted || _vlcPlayerController == null) return;
-
-    final value = _vlcPlayerController!.value;
-    setState(() {
-      _isPlaying = value.isPlaying;
-      _isBuffering = value.isBuffering;
-      _position = value.position;
-      _duration = value.duration;
-    });
-  }
-
-  Future<void> _loadAudioTracks() async {
-    if (_vlcPlayerController == null) return;
-    try {
-      final tracks = await _vlcPlayerController!.getAudioTracks();
-      debugPrint('🔊 Tracce audio disponibili: ${tracks.length}');
-      if (mounted) {
-        setState(() {
-          _availableAudioTracks = tracks;
-          if (_selectedAudioTrackId == null && tracks.isNotEmpty) {
-            _selectedAudioTrackId = tracks.keys.first;
-          }
-        });
-        for (final entry in tracks.entries) {
-          debugPrint('  └─ ${entry.value} (ID: ${entry.key})');
+  void _setupListeners() {
+    _subscriptions.addAll([
+      _player.stream.playing.listen((playing) {
+        if (mounted) setState(() => _isPlaying = playing);
+      }),
+      _player.stream.buffering.listen((buffering) {
+        if (mounted) setState(() => _isBuffering = buffering);
+      }),
+      _player.stream.position.listen((position) {
+        if (mounted) setState(() => _position = position);
+      }),
+      _player.stream.duration.listen((duration) {
+        if (mounted) setState(() => _duration = duration);
+      }),
+      _player.stream.completed.listen((completed) {
+        if (completed && currentVideo.hasNext) {
+          _playNextEpisode();
         }
-      }
-    } catch (e) {
-      debugPrint('⚠️ Errore nel caricamento tracce audio: $e');
-    }
+      }),
+      _player.stream.tracks.listen((tracks) {
+        if (mounted) {
+          setState(() {
+            _audioTracks = tracks.audio;
+            _subtitleTracks = tracks.subtitle;
+          });
+          debugPrint('🔊 Tracce audio: ${tracks.audio.length}');
+          for (final t in tracks.audio) {
+            debugPrint('  └─ ${t.title ?? t.language ?? t.id}');
+          }
+          debugPrint('📝 Tracce sottotitoli: ${tracks.subtitle.length}');
+        }
+      }),
+      _player.stream.track.listen((track) {
+        if (mounted) {
+          setState(() => _activeAudioTrack = track.audio);
+        }
+      }),
+      _player.stream.error.listen((error) {
+        debugPrint('❌ Errore player: $error');
+        if (mounted) {
+          setState(() {
+            _hasError = true;
+            _errorMessage = error;
+          });
+        }
+      }),
+    ]);
   }
 
-  void _changeAudioTrack(int trackId) {
-    debugPrint('🔊 Cambio traccia audio a: $trackId');
-    _vlcPlayerController?.setAudioTrack(trackId);
-    setState(() => _selectedAudioTrackId = trackId);
+  void _openMedia() {
+    final streamUrl = currentVideo.getStreamUrl(language: _selectedLanguage);
+    debugPrint('🎥 Apertura stream M3U8/HLS');
+    debugPrint('🔗 URL: $streamUrl');
+
+    setState(() {
+      _hasError = false;
+      _errorMessage = '';
+    });
+
+    _player.open(Media(streamUrl));
   }
 
-  Future<void> _changeLanguage(String language) async {
+  void _changeLanguage(String language) {
     debugPrint('🌐 Cambio lingua a: ${language.toUpperCase()}');
 
-    final newStreamUrl = currentVideo.getStreamUrl(language: language);
     setState(() {
       _selectedLanguage = language;
-      _availableAudioTracks = {};
-      _selectedAudioTrackId = null;
+      _audioTracks = [];
+      _activeAudioTrack = null;
     });
 
-    try {
-      await _vlcPlayerController?.setMediaFromNetwork(
-        newStreamUrl,
-        autoPlay: true,
-      );
-      // Ricarica le tracce audio dopo un breve delay
-      Future.delayed(const Duration(seconds: 2), _loadAudioTracks);
-    } catch (e) {
-      debugPrint('⚠️ Errore nel cambio lingua: $e');
-    }
+    final newStreamUrl = currentVideo.getStreamUrl(language: language);
+    _player.open(Media(newStreamUrl));
   }
 
-  Future<void> _playNextEpisode() async {
+  void _changeAudioTrack(AudioTrack track) {
+    debugPrint('🔊 Cambio traccia audio a: ${track.title ?? track.id}');
+    _player.setAudioTrack(track);
+  }
+
+  void _playNextEpisode() {
     final nextUrl = currentVideo.getNextStreamUrl(language: _selectedLanguage);
 
     if (nextUrl != null) {
-      debugPrint('▶️ Avvio episodio successivo: $nextUrl');
+      debugPrint('[Player] Avvio episodio successivo: $nextUrl');
 
       setState(() {
         currentVideo = model.Video(
@@ -149,23 +154,17 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
           nextEpisode: null,
           hasNext: false,
         );
-        _availableAudioTracks = {};
-        _selectedAudioTrackId = null;
+        _audioTracks = [];
+        _activeAudioTrack = null;
       });
 
-      try {
-        await _vlcPlayerController?.setMediaFromNetwork(
-          nextUrl,
-          autoPlay: true,
-        );
-        Future.delayed(const Duration(seconds: 2), _loadAudioTracks);
-      } catch (e) {
-        debugPrint('⚠️ Errore nel cambio episodio: $e');
-      }
+      _player.open(Media(nextUrl));
     } else {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Nessun episodio successivo disponibile')),
+          const SnackBar(
+            content: Text('Nessun episodio successivo disponibile'),
+          ),
         );
       }
     }
@@ -182,12 +181,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
       ]);
     } else {
       SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-      SystemChrome.setPreferredOrientations([
-        DeviceOrientation.portraitUp,
-        DeviceOrientation.portraitDown,
-        DeviceOrientation.landscapeLeft,
-        DeviceOrientation.landscapeRight,
-      ]);
+      SystemChrome.setPreferredOrientations(DeviceOrientation.values);
     }
   }
 
@@ -222,13 +216,19 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
   @override
   void dispose() {
     _hideControlsTimer?.cancel();
-    _vlcPlayerController?.removeListener(_onPlayerValueChanged);
-    _vlcPlayerController?.dispose();
+    for (final sub in _subscriptions) {
+      sub.cancel();
+    }
+    _player.dispose();
     // Ripristina orientamento
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     SystemChrome.setPreferredOrientations(DeviceOrientation.values);
     super.dispose();
   }
+
+  // ═══════════════════════════════════════════════
+  //  BUILD
+  // ═══════════════════════════════════════════════
 
   @override
   Widget build(BuildContext context) {
@@ -263,27 +263,55 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
         aspectRatio: 16 / 9,
         child: Stack(
           children: [
-            // Video
-            if (_vlcPlayerController != null)
-              VlcPlayer(
-                controller: _vlcPlayerController!,
-                aspectRatio: 16 / 9,
-                placeholder: Container(
-                  color: Colors.black,
-                  child: const Center(
-                    child: CircularProgressIndicator(color: Colors.red),
+            // Sfondo nero
+            Container(color: Colors.black),
+            // Errore
+            if (_hasError)
+              Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(24.0),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.error_outline,
+                        color: Colors.red,
+                        size: 48,
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        _errorMessage.isNotEmpty
+                            ? _errorMessage
+                            : 'Errore nel caricamento del video',
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontSize: 14,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 16),
+                      ElevatedButton.icon(
+                        onPressed: _openMedia,
+                        icon: const Icon(Icons.refresh),
+                        label: const Text('Riprova'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.red,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),
+            // Video
+            if (!_hasError)
+              Video(controller: _videoController, controls: NoVideoControls),
             // Buffering indicator
-            if (_isBuffering)
-              const Center(
-                child: CircularProgressIndicator(color: Colors.red),
-              ),
+            if (!_hasError && _isBuffering)
+              const Center(child: CircularProgressIndicator(color: Colors.red)),
             // Overlay controlli
-            if (_showControls)
+            if (!_hasError && _showControls)
               AnimatedOpacity(
-                opacity: _showControls ? 1.0 : 0.0,
+                opacity: 1.0,
                 duration: const Duration(milliseconds: 300),
                 child: _buildPlayerControls(),
               ),
@@ -322,7 +350,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
     );
   }
 
-  // 🌐 SELEZIONE LINGUA
+  // 🌐 SELEZIONE LINGUA (dal modello Video)
   Widget _buildLanguageSelector() {
     if (currentVideo.audioTracks.isEmpty) return const SizedBox.shrink();
     return Padding(
@@ -371,16 +399,21 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
     );
   }
 
-  // 🔊 SELEZIONE TRACCIA AUDIO
+  // 🔊 SELEZIONE TRACCIA AUDIO (dal player - tracce nel file M3U8)
   Widget _buildAudioTrackSelector() {
-    if (_availableAudioTracks.isEmpty) return const SizedBox.shrink();
+    // Filtra la traccia "no" (disattiva) e "auto"
+    final tracks = _audioTracks
+        .where((t) => t != AudioTrack.no() && t != AudioTrack.auto())
+        .toList();
+    if (tracks.isEmpty) return const SizedBox.shrink();
+
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16.0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text(
-            'Traccia audio:',
+            'Traccia audio (stream):',
             style: TextStyle(
               color: Colors.white,
               fontSize: 14,
@@ -391,14 +424,14 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             child: Row(
-              children: _availableAudioTracks.entries
+              children: tracks
                   .map(
-                    (entry) => Padding(
+                    (track) => Padding(
                       padding: const EdgeInsets.only(right: 8),
                       child: ElevatedButton(
-                        onPressed: () => _changeAudioTrack(entry.key),
+                        onPressed: () => _changeAudioTrack(track),
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: _selectedAudioTrackId == entry.key
+                          backgroundColor: _activeAudioTrack == track
                               ? Colors.red
                               : Colors.grey[700],
                           shape: RoundedRectangleBorder(
@@ -406,7 +439,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
                           ),
                         ),
                         child: Text(
-                          entry.value,
+                          track.title ?? track.language ?? 'Audio ${track.id}',
                           style: const TextStyle(color: Colors.white),
                         ),
                       ),
@@ -420,7 +453,6 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
     );
   }
 
-  // ⏭️ PROSSIMO EPISODIO
   Widget _buildNextEpisodeButton() {
     if (currentVideo.type != "series" ||
         currentVideo.nextEpisode == null ||
@@ -447,25 +479,28 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
     );
   }
 
-  // 🎮 OVERLAY CONTROLLI PLAYER
+  // ═══════════════════════════════════════════════
+  //  OVERLAY CONTROLLI
+  // ═══════════════════════════════════════════════
+
   Widget _buildPlayerControls() {
     return Container(
-      decoration: BoxDecoration(
+      decoration: const BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
           colors: [
-            const Color.fromRGBO(0, 0, 0, 0.6),
-            const Color.fromRGBO(0, 0, 0, 0.0),
-            const Color.fromRGBO(0, 0, 0, 0.0),
-            const Color.fromRGBO(0, 0, 0, 0.7),
+            Color.fromRGBO(0, 0, 0, 0.6),
+            Color.fromRGBO(0, 0, 0, 0.0),
+            Color.fromRGBO(0, 0, 0, 0.0),
+            Color.fromRGBO(0, 0, 0, 0.7),
           ],
         ),
       ),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          // Top bar - Titolo
+          // Top bar
           Padding(
             padding: const EdgeInsets.all(12.0),
             child: Row(
@@ -495,7 +530,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
             ),
           ),
 
-          // Center - Play/Pause grande
+          // Center - Play/Pause
           IconButton(
             iconSize: 64,
             icon: Icon(
@@ -503,16 +538,12 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
               color: Colors.white,
             ),
             onPressed: () {
-              if (_isPlaying) {
-                _vlcPlayerController?.pause();
-              } else {
-                _vlcPlayerController?.play();
-              }
+              _player.playOrPause();
               _startHideControlsTimer();
             },
           ),
 
-          // Bottom bar - Seek bar + controlli
+          // Bottom bar - Seek + controlli
           Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -541,18 +572,17 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
                         ),
                         child: Slider(
                           value: _duration.inMilliseconds > 0
-                              ? _position.inMilliseconds
-                                  .toDouble()
-                                  .clamp(0.0, _duration.inMilliseconds.toDouble())
+                              ? _position.inMilliseconds.toDouble().clamp(
+                                  0.0,
+                                  _duration.inMilliseconds.toDouble(),
+                                )
                               : 0.0,
                           min: 0.0,
                           max: _duration.inMilliseconds > 0
                               ? _duration.inMilliseconds.toDouble()
                               : 1.0,
                           onChanged: (value) {
-                            _vlcPlayerController?.seekTo(
-                              Duration(milliseconds: value.toInt()),
-                            );
+                            _player.seek(Duration(milliseconds: value.toInt()));
                             _startHideControlsTimer();
                           },
                         ),
@@ -577,9 +607,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
                     // Volume
                     IconButton(
                       icon: const Icon(Icons.volume_up, color: Colors.white),
-                      onPressed: () {
-                        _vlcPlayerController?.setVolume(100);
-                      },
+                      onPressed: () => _player.setVolume(100.0),
                     ),
 
                     const Spacer(),
@@ -587,7 +615,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
                     // Sottotitoli
                     IconButton(
                       icon: const Icon(Icons.subtitles, color: Colors.white),
-                      onPressed: () => _showSubtitlesDialog(),
+                      onPressed: _showSubtitlesDialog,
                     ),
 
                     // Fullscreen
@@ -610,45 +638,45 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
     );
   }
 
-  void _showSubtitlesDialog() async {
-    if (_vlcPlayerController == null) return;
-    try {
-      final spuTracks = await _vlcPlayerController!.getSpuTracks();
-      if (!mounted) return;
+  void _showSubtitlesDialog() {
+    // Filtra la traccia "no" e "auto"
+    final tracks = _subtitleTracks
+        .where((t) => t != SubtitleTrack.no() && t != SubtitleTrack.auto())
+        .toList();
 
-      showDialog(
-        context: context,
-        builder: (context) => AlertDialog(
-          backgroundColor: Colors.grey[900],
-          title: const Text(
-            'Sottotitoli',
-            style: TextStyle(color: Colors.white),
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ListTile(
-                title: const Text('Disattiva', style: TextStyle(color: Colors.white)),
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: Colors.grey[900],
+        title: const Text('Sottotitoli', style: TextStyle(color: Colors.white)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              title: const Text(
+                'Disattiva',
+                style: TextStyle(color: Colors.white),
+              ),
+              onTap: () {
+                _player.setSubtitleTrack(SubtitleTrack.no());
+                Navigator.pop(context);
+              },
+            ),
+            ...tracks.map(
+              (track) => ListTile(
+                title: Text(
+                  track.title ?? track.language ?? 'Sub ${track.id}',
+                  style: const TextStyle(color: Colors.white),
+                ),
                 onTap: () {
-                  _vlcPlayerController?.setSpuTrack(-1);
+                  _player.setSubtitleTrack(track);
                   Navigator.pop(context);
                 },
               ),
-              ...spuTracks.entries.map(
-                (entry) => ListTile(
-                  title: Text(entry.value, style: const TextStyle(color: Colors.white)),
-                  onTap: () {
-                    _vlcPlayerController?.setSpuTrack(entry.key);
-                    Navigator.pop(context);
-                  },
-                ),
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
-      );
-    } catch (e) {
-      debugPrint('⚠️ Errore nel caricamento sottotitoli: $e');
-    }
+      ),
+    );
   }
 }
