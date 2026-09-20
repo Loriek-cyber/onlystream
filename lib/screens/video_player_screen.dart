@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:better_player/better_player.dart';
+import 'package:media_kit/media_kit.dart';
+import 'package:media_kit_video/media_kit_video.dart';
 import 'package:onlystream/models/video_model.dart' as model;
 
 class VideoPlayerScreen extends StatefulWidget {
@@ -13,7 +14,14 @@ class VideoPlayerScreen extends StatefulWidget {
 
 class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
   late model.Video currentVideo;
-  late BetterPlayerController _betterPlayerController;
+
+  late final player = Player();
+  late final controller = VideoController(
+    player,
+    configuration: const VideoControllerConfiguration(
+      enableHardwareAcceleration: false, // Fix stuttering on some Linux drivers
+    ),
+  );
 
   @override
   void initState() {
@@ -23,21 +31,44 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
   }
 
   void _initializePlayer() {
+    // Prendi l'URL dello stream (italiano di default)
     String streamUrl = currentVideo.getStreamUrl("it");
+    debugPrint("🎥 Tentativo di riproduzione stream: $streamUrl");
 
-    PlayerDataSource betterPlayerDataSource = PlayerDataSource(
-      DataSourceType.network,
-      streamUrl,
-    );
+    // Ascolto degli eventi per capire perché non parte
+    player.stream.error.listen((error) {
+      debugPrint("❌ ERRORE PLAYER: $error");
+    });
 
-    _betterPlayerController = BetterPlayerController(
-      const PlayerConfiguration(
-        aspectRatio: 16 / 9,
-        autoPlay: true,
-        fit: BoxFit.contain,
-      ),
-      betterPlayerDataSource: betterPlayerDataSource,
-    );
+    player.stream.playing.listen((playing) {
+      debugPrint("▶️ PLAYER RIPRODUZIONE: $playing");
+    });
+
+    player.stream.buffering.listen((buffering) {
+      debugPrint("⏳ PLAYER IN BUFFERING: $buffering");
+    });
+
+    player.stream.log.listen((event) {
+      debugPrint("📝 LOG MEDIAKIT: ${event.text}");
+    });
+
+    if (player.platform is NativePlayer) {
+      // Forza mpv a leggere i flussi con il demuxer mp4 bypassando il probing basato sull'estensione URL
+      (player.platform as NativePlayer).setProperty(
+        'demuxer-lavf-format',
+        'mp4',
+      );
+    }
+
+    // open() avvia automaticamente il video con play: true
+    player
+        .open(Media(streamUrl), play: true)
+        .then((_) {
+          debugPrint("✅ Apertura stream completata con successo");
+        })
+        .catchError((error) {
+          debugPrint("🚨 ERRORE APERTURA STREAM: $error");
+        });
   }
 
   void playNextEpisode() {
@@ -47,7 +78,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
 
   @override
   void dispose() {
-    _betterPlayerController.dispose();
+    player.dispose();
     super.dispose();
   }
 
@@ -62,8 +93,51 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
               // Player
               AspectRatio(
                 aspectRatio: 16 / 9,
-                child: BetterPlayer(
-                  controller: _betterPlayerController,
+                child: Stack(
+                  children: [
+                    Video(
+                      controller: controller,
+                      // Rimuove i controlli predefiniti per permetterti di crearne di tuoi!
+                      controls: NoVideoControls,
+                    ),
+                    // Esempio di controlli custom sovrapposti
+                    Positioned(
+                      bottom: 0,
+                      left: 0,
+                      right: 0,
+                      child: Container(
+                        color: Colors.black54,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 8,
+                        ),
+                        child: Row(
+                          children: [
+                            IconButton(
+                              icon: const Icon(
+                                Icons.play_arrow,
+                                color: Colors.white,
+                              ),
+                              onPressed: () => player.play(),
+                            ),
+                            IconButton(
+                              icon: const Icon(
+                                Icons.pause,
+                                color: Colors.white,
+                              ),
+                              onPressed: () => player.pause(),
+                            ),
+                            const Expanded(child: SizedBox()),
+                            // Qui potresti aggiungere uno slider per il tempo!
+                            const Text(
+                              "00:00 / 00:00",
+                              style: TextStyle(color: Colors.white),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
               // Info video

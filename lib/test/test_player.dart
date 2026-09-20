@@ -2,9 +2,9 @@ import 'package:onlystream/models/video_model.dart';
 
 class TestData {
   static Video breakingBadSeries = Video(
-    id: 550,
-    title: "test",
-    type: "movie",
+    id: 1396,
+    title: "Breaking Bad",
+    type: "series",
     audioTracks: [
       AudioTrack(language: "Italiano", code: "it"),
       AudioTrack(language: "English", code: "en"),
