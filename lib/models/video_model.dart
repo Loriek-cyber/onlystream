@@ -10,8 +10,9 @@ class AudioTrack {
 class Episode {
   final int season;
   final int number;
+  final String? title;
 
-  Episode({required this.season, required this.number});
+  Episode({required this.season, required this.number, this.title});
 }
 
 class Video {
@@ -39,17 +40,19 @@ class Video {
       id: json['tmdb_id'] as int,
       title: json['title'] as String? ?? 'Unknown',
       type: json['media_type'] as String,
-      audioTracks: [], // Popola se necessario
+      audioTracks: [],
       currentEpisode: json['media_type'] == 'tv'
           ? Episode(
               season: json['current_season'] as int,
               number: json['current_episode'] as int,
+              title: json['episode_title'] as String?,
             )
           : null,
       nextEpisode: json['media_type'] == 'tv' && json['has_next'] == true
           ? Episode(
               season: json['next_season'] as int,
               number: json['next_episode'] as int,
+              title: json['next_episode_title'] as String?,
             )
           : null,
       hasNext: json['has_next'] as bool? ?? false,
