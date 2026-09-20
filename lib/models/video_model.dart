@@ -38,6 +38,9 @@ class Video {
     if (type == "movie") {
       return "${AppConstants.baseUrl}/movie/$id/?lang=$language";
     } else {
+      print(
+        "${AppConstants.baseUrl}/tv/$id/${currentEpisode?.season}/${currentEpisode?.number}/?lang=$language",
+      );
       return "${AppConstants.baseUrl}/tv/$id/${currentEpisode?.season}/${currentEpisode?.number}/?lang=$language";
     }
   }

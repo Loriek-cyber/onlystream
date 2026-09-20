@@ -1,21 +1,19 @@
 import 'package:flutter/material.dart';
-import 'package:chewie/chewie.dart';
-import 'package:video_player/video_player.dart';
-import 'package:onlystream/models/video_model.dart';
+import 'package:better_player/better_player.dart';
+import 'package:onlystream/models/video_model.dart' as model;
 
 class VideoPlayerScreen extends StatefulWidget {
-  final Video video;
+  final model.Video video;
 
-  const VideoPlayerScreen({required this.video});
+  const VideoPlayerScreen({super.key, required this.video});
 
   @override
   State<VideoPlayerScreen> createState() => _VideoPlayerScreenState();
 }
 
 class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
-  late Video currentVideo;
-  late VideoPlayerController _videoPlayerController;
-  late ChewieController _chewieController;
+  late model.Video currentVideo;
+  late BetterPlayerController _betterPlayerController;
 
   @override
   void initState() {
@@ -25,27 +23,31 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
   }
 
   void _initializePlayer() {
-    // Prendi l'URL dello stream (italiano di default)
     String streamUrl = currentVideo.getStreamUrl("it");
 
-    _videoPlayerController = VideoPlayerController.network(streamUrl);
+    PlayerDataSource betterPlayerDataSource = PlayerDataSource(
+      DataSourceType.network,
+      streamUrl,
+    );
 
-    _chewieController = ChewieController(
-      videoPlayerController: _videoPlayerController,
-      autoPlay: true,
-      looping: false,
+    _betterPlayerController = BetterPlayerController(
+      const PlayerConfiguration(
+        aspectRatio: 16 / 9,
+        autoPlay: true,
+        fit: BoxFit.contain,
+      ),
+      betterPlayerDataSource: betterPlayerDataSource,
     );
   }
 
   void playNextEpisode() {
     // Per ora, solo un placeholder
-    print("Prossimo episodio: ${currentVideo.nextEpisode?.title}");
+    debugPrint("Prossimo episodio: ${currentVideo.nextEpisode?.title}");
   }
 
   @override
   void dispose() {
-    _videoPlayerController.dispose();
-    _chewieController.dispose();
+    _betterPlayerController.dispose();
     super.dispose();
   }
 
@@ -54,49 +56,56 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
     return Scaffold(
       backgroundColor: Colors.black,
       body: SafeArea(
-        child: Column(
-          children: [
-            // Player
-            AspectRatio(
-              aspectRatio: 16 / 9,
-              child: Chewie(controller: _chewieController),
-            ),
-            // Info video
-            Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    currentVideo.title,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  if (currentVideo.type == "series" &&
-                      currentVideo.currentEpisode != null)
-                    Text(
-                      "S${currentVideo.currentEpisode!.season}E${currentVideo.currentEpisode!.number} - ${currentVideo.currentEpisode!.title}",
-                      style: const TextStyle(color: Colors.grey, fontSize: 14),
-                    ),
-                ],
-              ),
-            ),
-            // Pulsante prossimo episodio
-            if (currentVideo.type == "series" &&
-                currentVideo.nextEpisode != null)
-              Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: ElevatedButton(
-                  onPressed: playNextEpisode,
-                  child: Text(
-                    "Prossimo: S${currentVideo.nextEpisode!.season}E${currentVideo.nextEpisode!.number}",
-                  ),
+        child: SingleChildScrollView(
+          child: Column(
+            children: [
+              // Player
+              AspectRatio(
+                aspectRatio: 16 / 9,
+                child: BetterPlayer(
+                  controller: _betterPlayerController,
                 ),
               ),
-          ],
+              // Info video
+              Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      currentVideo.title,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    if (currentVideo.type == "series" &&
+                        currentVideo.currentEpisode != null)
+                      Text(
+                        "S${currentVideo.currentEpisode!.season}E${currentVideo.currentEpisode!.number} - ${currentVideo.currentEpisode!.title}",
+                        style: const TextStyle(
+                          color: Colors.grey,
+                          fontSize: 14,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              // Pulsante prossimo episodio
+              if (currentVideo.type == "series" &&
+                  currentVideo.nextEpisode != null)
+                Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: ElevatedButton(
+                    onPressed: playNextEpisode,
+                    child: Text(
+                      "Prossimo: S${currentVideo.nextEpisode!.season}E${currentVideo.nextEpisode!.number}",
+                    ),
+                  ),
+                ),
+            ],
+          ),
         ),
       ),
     );
