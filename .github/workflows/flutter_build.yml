@@ -1,85 +1,100 @@
-name: Flutter Build Multi-Platform
+name: '[OnlyStream] Multi-Platform Build & Release'
 
 on:
   push:
     branches: [ main, develop ]
+    tags:
+      - 'v*'
   pull_request:
     branches: [ main, develop ]
   workflow_dispatch:
 
 jobs:
   build-android:
+    name: '[Android] Build'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: '[Android] Checkout code'
+        uses: actions/checkout@v4
       
-      - name: Setup Java
+      - name: '[Android] Setup Java'
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
-          java-version: '11'
+          java-version: '17'
       
-      - name: Setup Flutter
+      - name: '[Android] Setup Flutter'
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.16.x'
+          channel: 'stable'
           cache: true
       
-      - name: Get dependencies
+      - name: '[Android] Get dependencies'
         run: flutter pub get
       
-      - name: Build APK
-        run: flutter build apk --split-per-abi
+      - name: '[Android] Build APK'
+        run: flutter build apk --release
       
-      - name: Build AAB (App Bundle)
-        run: flutter build appbundle
+      - name: '[Android] Build AAB'
+        run: flutter build appbundle --release
       
-      - name: Upload APK artifacts
+      - name: '[Android] Package artifacts'
+        run: |
+          mkdir -p release-files
+          cp build/app/outputs/flutter-apk/app-release.apk release-files/onlystream-android.apk
+          cp build/app/outputs/bundle/release/app-release.aab release-files/onlystream-android.aab
+
+      - name: '[Android] Upload artifacts'
         uses: actions/upload-artifact@v4
         with:
-          name: android-apk
-          path: build/app/outputs/flutter-apk/**/*.apk
-      
-      - name: Upload AAB artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: android-aab
-          path: build/app/outputs/bundle/release/app-release.aab
+          name: android-release
+          path: release-files/
 
   build-ios:
+    name: '[iOS] Build'
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: '[iOS] Checkout code'
+        uses: actions/checkout@v4
       
-      - name: Setup Flutter
+      - name: '[iOS] Setup Flutter'
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.16.x'
+          channel: 'stable'
           cache: true
       
-      - name: Get dependencies
+      - name: '[iOS] Get dependencies'
         run: flutter pub get
       
-      - name: Build iOS
+      - name: '[iOS] Build iOS'
         run: flutter build ios --release --no-codesign
       
-      - name: Upload iOS build artifacts
+      - name: '[iOS] Package artifact'
+        run: |
+          mkdir -p release-files
+          cd build/ios/iphoneos
+          zip -r ../../../release-files/onlystream-ios.zip Runner.app
+
+      - name: '[iOS] Upload artifact'
         uses: actions/upload-artifact@v4
         with:
-          name: ios-build
-          path: build/ios/iphoneos/Runner.app
+          name: ios-release
+          path: release-files/
 
   build-linux:
+    name: '[Linux] Build'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: '[Linux] Checkout code'
+        uses: actions/checkout@v4
       
-      - name: Setup dependencies
+      - name: '[Linux] Setup dependencies'
         run: |
           sudo apt-get update
           sudo apt-get install -y \
             libgtk-3-dev \
             libgles2-mesa-dev \
+            libmpv-dev \
             pkg-config \
             cmake \
             ninja-build \
@@ -87,70 +102,112 @@ jobs:
             git \
             curl
       
-      - name: Setup Flutter
+      - name: '[Linux] Setup Flutter'
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.16.x'
+          channel: 'stable'
           cache: true
       
-      - name: Enable Linux desktop
+      - name: '[Linux] Enable Linux desktop'
         run: flutter config --enable-linux-desktop
       
-      - name: Get dependencies
+      - name: '[Linux] Get dependencies'
         run: flutter pub get
       
-      - name: Build Linux
+      - name: '[Linux] Build Linux'
         run: flutter build linux --release
       
-      - name: Upload Linux artifacts
+      - name: '[Linux] Package artifact'
+        run: |
+          mkdir -p release-files
+          tar -czvf release-files/onlystream-linux.tar.gz -C build/linux/x64/release/bundle .
+
+      - name: '[Linux] Upload artifact'
         uses: actions/upload-artifact@v4
         with:
-          name: linux-build
-          path: build/linux/x64/release/bundle/
+          name: linux-release
+          path: release-files/
 
   build-windows:
+    name: '[Windows] Build'
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: '[Windows] Checkout code'
+        uses: actions/checkout@v4
       
-      - name: Setup Visual Studio
+      - name: '[Windows] Setup Visual Studio'
         uses: microsoft/setup-msbuild@v1
       
-      - name: Setup Flutter
+      - name: '[Windows] Setup Flutter'
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.16.x'
+          channel: 'stable'
           cache: true
       
-      - name: Enable Windows desktop
+      - name: '[Windows] Enable Windows desktop'
         run: flutter config --enable-windows-desktop
       
-      - name: Get dependencies
+      - name: '[Windows] Get dependencies'
         run: flutter pub get
       
-      - name: Build Windows
+      - name: '[Windows] Build Windows'
         run: flutter build windows --release
       
-      - name: Upload Windows artifacts
+      - name: '[Windows] Package artifact'
+        run: |
+          mkdir release-files
+          Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath release-files\onlystream-windows.zip
+
+      - name: '[Windows] Upload artifact'
         uses: actions/upload-artifact@v4
         with:
-          name: windows-build
-          path: build/windows/x64/runner/Release/
+          name: windows-release
+          path: release-files/
+
+  release:
+    name: '[Release] Create Release'
+    needs: [build-android, build-ios, build-linux, build-windows]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
+    permissions:
+      contents: write
+    steps:
+      - name: '[Release] Download all artifacts'
+        uses: actions/download-artifact@v4
+        with:
+          path: release-artifacts
+          merge-multiple: true
+
+      - name: '[Release] Publish to GitHub Release'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            release-artifacts/*.apk
+            release-artifacts/*.aab
+            release-artifacts/*.tar.gz
+            release-artifacts/*.zip
+          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || 'latest' }}
+          name: ${{ github.ref_type == 'tag' && github.ref_name || 'Latest Release' }}
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   notify:
+    name: '[Notify] Check Status'
     runs-on: ubuntu-latest
     needs: [build-android, build-ios, build-linux, build-windows]
     if: always()
     steps:
-      - name: Check build status
+      - name: '[Notify] Verify build status'
         run: |
           if [ "${{ needs.build-android.result }}" = "success" ] && \
              [ "${{ needs.build-ios.result }}" = "success" ] && \
              [ "${{ needs.build-linux.result }}" = "success" ] && \
              [ "${{ needs.build-windows.result }}" = "success" ]; then
-            echo "✅ All builds completed successfully!"
+            echo "[Notify] All builds completed successfully"
             exit 0
           else
-            echo "❌ Some builds failed"
+            echo "[Notify] Some builds failed"
             exit 1
           fi
