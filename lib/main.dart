@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:media_kit/media_kit.dart';
 import 'package:onlystream/screens/video_player_screen.dart';
 import 'package:onlystream/test/test_player.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
