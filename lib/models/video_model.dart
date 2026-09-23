@@ -58,24 +58,17 @@ class Video {
 
     return Video(
       id: json['tmdb_id'] as int? ?? 0,
-      title: json['series_name'] as String? ??
+      title:
+          json['series_name'] as String? ??
           json['title'] as String? ??
           'Unknown',
       type: isTv ? 'series' : mediaType,
       audioTracks: [],
       currentEpisode: isTv
-          ? Episode(
-              season: season,
-              number: episodeNum,
-              title: episodeTitle,
-            )
+          ? Episode(season: season, number: episodeNum, title: episodeTitle)
           : null,
       nextEpisode: isTv && hasNext && nextSeason != null && nextEpNum != null
-          ? Episode(
-              season: nextSeason,
-              number: nextEpNum,
-              title: nextEpTitle,
-            )
+          ? Episode(season: nextSeason, number: nextEpNum, title: nextEpTitle)
           : null,
       hasNext: hasNext,
     );
@@ -85,11 +78,11 @@ class Video {
   /// The backend returns an .m3u8 playlist.
   String getStreamUrl({String language = 'it'}) {
     if (type == "movie") {
-      return "${AppConstants.baseUrl}/movie/$id/?lang=$language";
+      return "http://${AppConstants.baseUrl}/movie/$id/?lang=$language";
     } else {
       final season = currentEpisode?.season ?? 0;
       final episode = currentEpisode?.number ?? 0;
-      return "${AppConstants.baseUrl}/tv/$id/$season/$episode/?lang=$language";
+      return "http://${AppConstants.baseUrl}/tv/$id/$season/$episode/?lang=$language";
     }
   }
 
@@ -99,6 +92,6 @@ class Video {
 
     final season = nextEpisode!.season;
     final episode = nextEpisode!.number;
-    return "${AppConstants.baseUrl}/tv/$id/$season/$episode/?lang=$language";
+    return "http://${AppConstants.baseUrl}/tv/$id/$season/$episode/?lang=$language";
   }
 }

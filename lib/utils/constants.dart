@@ -1,3 +1,5 @@
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+
 class AppConstants {
-  static const String baseUrl = "http://localhost:5555";
+  static String baseUrl = dotenv.env['API_URL'] ?? 'localhost:5555';
 }
