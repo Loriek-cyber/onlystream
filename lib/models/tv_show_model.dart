@@ -1,7 +1,5 @@
 import 'dart:ffi';
 
-import 'package:onlystream/models/video_model.dart';
-
 class TvShowModel {
   Long id;
   String name;
