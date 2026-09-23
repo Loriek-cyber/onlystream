@@ -78,11 +78,11 @@ class Video {
   /// The backend returns an .m3u8 playlist.
   String getStreamUrl({String language = 'it'}) {
     if (type == "movie") {
-      return "http://${AppConstants.baseUrl}/movie/$id/?lang=$language";
+      return "${AppConstants.baseUrl}/movie/$id/?lang=$language";
     } else {
       final season = currentEpisode?.season ?? 0;
       final episode = currentEpisode?.number ?? 0;
-      return "http://${AppConstants.baseUrl}/tv/$id/$season/$episode/?lang=$language";
+      return "${AppConstants.baseUrl}/tv/$id/$season/$episode/?lang=$language";
     }
   }
 
@@ -92,6 +92,6 @@ class Video {
 
     final season = nextEpisode!.season;
     final episode = nextEpisode!.number;
-    return "http://${AppConstants.baseUrl}/tv/$id/$season/$episode/?lang=$language";
+    return "${AppConstants.baseUrl}/tv/$id/$season/$episode/?lang=$language";
   }
 }
