@@ -1,3 +1,3 @@
 class AppConstants {
-  static const String baseUrl = "http://locahost:5555";
+  static const String baseUrl = "http://localhost:5555";
 }
