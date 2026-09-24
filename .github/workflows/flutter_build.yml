@@ -33,10 +33,10 @@ jobs:
         run: flutter pub get
       
       - name: '[Android] Build APK'
-        run: flutter build apk --release
+        run: flutter build apk --release --dart-define=API_URL="${{ vars.API_URL }}"
       
       - name: '[Android] Build AAB'
-        run: flutter build appbundle --release
+        run: flutter build appbundle --release --dart-define=API_URL="${{ vars.API_URL }}"
       
       - name: '[Android] Package artifacts'
         run: |
@@ -67,7 +67,7 @@ jobs:
         run: flutter pub get
       
       - name: '[iOS] Build iOS'
-        run: flutter build ios --release --no-codesign
+        run: flutter build ios --release --no-codesign --dart-define=API_URL="${{ vars.API_URL }}"
       
       - name: '[iOS] Package artifact'
         run: |
@@ -115,7 +115,7 @@ jobs:
         run: flutter pub get
       
       - name: '[Linux] Build Linux'
-        run: flutter build linux --release
+        run: flutter build linux --release --dart-define=API_URL="${{ vars.API_URL }}"
       
       - name: '[Linux] Package artifact'
         run: |
@@ -151,7 +151,7 @@ jobs:
         run: flutter pub get
       
       - name: '[Windows] Build Windows'
-        run: flutter build windows --release
+        run: flutter build windows --release --dart-define=API_URL="${{ vars.API_URL }}"
       
       - name: '[Windows] Package artifact'
         run: |
