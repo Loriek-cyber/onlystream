@@ -1,16 +1,10 @@
-import 'dart:ffi';
+import 'package:onlystream/models/show_model.dart';
 
-class TvShowModel {
-  Long id;
-  String name;
-  String description;
-  String tmdb_id;
-
-  TvShowModel({
-    required this.id,
-    required this.name,
-    required this.description,
-    required this.tmdb_id,
+class TvShowModel extends ShowModel {
+  new({
+    required super.name,
+    required super.description,
+    required super.tmdb_id,
   });
 }
 

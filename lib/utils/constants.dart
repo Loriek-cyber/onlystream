@@ -2,5 +2,8 @@
 
 class AppConstants {
   //dotenv.env['API_URL'] ??
-  static const String baseUrl = String.fromEnvironment('API_URL');
+  static const String baseUrl = String.fromEnvironment(
+    'API_URL',
+    defaultValue: "http://localhost:5555",
+  );
 }

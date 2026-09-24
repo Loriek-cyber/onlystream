@@ -1,9 +1,7 @@
-import 'dart:ffi';
-
 import 'package:onlystream/models/tv_show_model.dart';
 
 class UserData {
-  final Long id;
+  final int id;
   final String username;
   List<CurrentEpisode> list_current;
   UserData({
