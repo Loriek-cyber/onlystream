@@ -1,0 +1,652 @@
+# 📚 Documentazione Ufficiale EasyStream API
+
+**EasyStream API** è un server HTTP locale ad alte prestazioni scritto in **Rust** con **Axum** e **Tokio**, progettato per fornire flussi video **HLS (.m3u8)**, ricerca globale, catalogo e scoperta di film e serie TV (**TMDB**), streaming di anime giapponesi (**AnimeUnity**), e gestione persistente dei preferiti.
+
+---
+
+## 📑 Indice
+
+1. [Panoramica e Architettura](#-panoramica-e-architettura)
+2. [Configurazione ed Esecuzione](#-configurazione-ed-esecuzione)
+3. [Guida Completa agli Endpoint](#-guida-completa-agli-endpoint)
+   - [1. Dashboard e Stato del Servizio](#1-dashboard-e-stato-del-servizio)
+   - [2. Scoperta Contenuti e Catalogo TMDB (Nuove Serie, Popolari, Trending)](#2-scoperta-contenuti-e-catalogo-tmdb)
+   - [3. Ricerca Globale TMDB](#3-ricerca-globale-tmdb)
+   - [4. Streaming Film (VixSrc)](#4-streaming-film-vixsrc)
+   - [5. Streaming Serie TV (VixSrc)](#5-streaming-serie-tv-vixsrc)
+   - [6. Streaming e Ricerca Anime (AnimeUnity)](#6-streaming-e-ricerca-anime-animeunity)
+   - [7. Gestione Preferiti (Watchlist Persistente)](#7-gestione-preferiti-watchlist-persistente)
+4. [Formati di Output e Parametri Speciali](#-formati-di-output-e-parametri-speciali)
+5. [Modelli e Schemi Dati JSON](#-modelli-e-schemi-dati-json)
+6. [Codici di Stato HTTP ed Errori](#-codici-di-stato-http-ed-errori)
+7. [Integrazione con Player Esterni (VLC, Infuse, Kodi, HLS.js)](#-integrazione-con-player-esterni)
+
+---
+
+## 🚀 Panoramica e Architettura
+
+EasyStream API integra tre fonti principali:
+- **VixSrc**: Fornisce flussi master HLS M3U8 per Film e Serie TV basati su **TMDB ID**, con estrazione automatica delle tracce audio (italiano, inglese), sottotitoli e varianti di bitrate/risoluzione.
+- **AnimeUnity**: Fornisce ricerca e streaming diretto di anime giapponesi (SUB e ITA).
+- **The Movie Database (TMDB)**: Catalogo per ricerca, tendenze, nuove serie TV, dettagli sulle stagioni ed episodi, e calcolo intelligente del prossimo episodio.
+- **Favorites Store**: Database locale in formato JSON (`data/favorites.json`) thread-safe e persistente tra i riavvii.
+
+> [!NOTE]
+> Il client TMDB funziona **senza alcuna configurazione o API key obbligatoria**, effettuando il parsing delle pagine e dei pannelli ufficiali di themoviedb.org. Se si desidera utilizzare l'API ufficiale TMDB v3 ad altissima frequenza, è sufficiente impostare la variabile d'ambiente `TMDB_API_KEY`.
+
+---
+
+## ⚙️ Configurazione ed Esecuzione
+
+### Prerequisiti
+- **Rust** (versione 1.80+ o successiva)
+- **Cargo**
+
+### Avvio del Server
+```bash
+# Compilazione ed esecuzione in modalità debug
+cargo run
+
+# Oppure compilazione ottimizzata per produzione
+cargo build --release
+./target/release/easystreamapi
+```
+
+Il server sarà attivo per default su: `http://localhost:5555`
+
+---
+
+## 📡 Guida Completa agli Endpoint
+
+---
+
+### 1. Dashboard e Stato del Servizio
+
+#### `GET /`
+- **Descrizione**: Interfaccia Web moderna con Video Player HLS integrato (Hls.js), navigazione categorie (Nuove Serie, Tendenze, Film Popolari, Preferiti), form di riproduzione manuale e ricerca live.
+- **Tipo di dato restituito**: `text/html; charset=utf-8`
+
+#### `GET /health`
+- **Descrizione**: Verifica lo stato del servizio e la versione corrente.
+- **Tipo di dato restituito**: `application/json`
+- **Esempio di richiesta**:
+  ```bash
+  curl -s http://localhost:5555/health
+  ```
+- **Esempio di risposta**:
+  ```json
+  {
+    "service": "easystreamapi",
+    "status": "ok",
+    "version": "0.1.0"
+  }
+  ```
+
+---
+
+### 2. Scoperta Contenuti e Catalogo TMDB
+
+Questi endpoint permettono di ottenere cataloghi aggiornati di film e serie TV da TMDB, ideali per alimentare griglie, carousel o homepage di applicazioni di streaming.
+
+#### `GET /tv/new`
+*(Alias: `/series/new`, `/tmdb/series/new`, `/tmdb/tv/new`, `/tmdb/tv/on-the-air`)*
+- **Descrizione**: Restituisce le **nuove serie TV attualmente in onda** (On The Air / Nuove Uscite).
+- **Parametri Query**:
+  - `lang` *(opzionale)*: `it` (default) o `en`.
+- **Tipo di dato restituito**: `application/json` (`Vec<TmdbSearchResult>`)
+- **Esempio di richiesta**:
+  ```bash
+  curl -s "http://localhost:5555/tv/new?lang=it"
+  ```
+- **Esempio di risposta**:
+  ```json
+  [
+    {
+      "id": 22980,
+      "title": "Watch What Happens Live with Andy Cohen",
+      "media_type": "tv",
+      "poster_url": "https://media.themoviedb.org/t/p/w220_and_h330_face/onSD9UXfJwrMXWhq7UY7hGF2S1h.jpg",
+      "release_date": "16 luglio, 2009",
+      "stream_url": "http://localhost:5555/tv/22980/1/1/"
+    },
+    {
+      "id": 456,
+      "title": "I Simpson",
+      "media_type": "tv",
+      "poster_url": "https://media.themoviedb.org/t/p/w220_and_h330_face/fxLooktejTUqCvZl9ARhKMFNpbf.jpg",
+      "release_date": "17 dicembre, 1989",
+      "stream_url": "http://localhost:5555/tv/456/1/1/"
+    }
+  ]
+  ```
+
+#### `GET /tv/popular`
+*(Alias: `/series/popular`, `/tmdb/series/popular`, `/tmdb/tv/popular`)*
+- **Descrizione**: Restituisce le **serie TV più popolari** del momento su TMDB.
+- **Parametri Query**: `lang` (`it` o `en`).
+- **Tipo di dato restituito**: `application/json` (`Vec<TmdbSearchResult>`)
+- **Esempio di richiesta**:
+  ```bash
+  curl -s "http://localhost:5555/tv/popular"
+  ```
+
+#### `GET /tv/top-rated`
+*(Alias: `/series/top-rated`, `/tmdb/series/top-rated`, `/tmdb/tv/top-rated`)*
+- **Descrizione**: Restituisce le serie TV con le valutazioni più alte di sempre.
+- **Parametri Query**: `lang` (`it` o `en`).
+- **Tipo di dato restituito**: `application/json` (`Vec<TmdbSearchResult>`)
+- **Esempio di richiesta**:
+  ```bash
+  curl -s "http://localhost:5555/tv/top-rated"
+  ```
+
+#### `GET /movie/popular`
+*(Alias: `/tmdb/movie/popular`)*
+- **Descrizione**: Restituisce i **film più popolari** del momento.
+- **Parametri Query**: `lang` (`it` o `en`).
+- **Tipo di dato restituito**: `application/json` (`Vec<TmdbSearchResult>`)
+- **Esempio di richiesta**:
+  ```bash
+  curl -s "http://localhost:5555/movie/popular"
+  ```
+
+#### `GET /movie/now-playing`
+*(Alias: `/tmdb/movie/now-playing`)*
+- **Descrizione**: Restituisce i film attualmente proiettati al cinema o di recente rilascio streaming.
+- **Parametri Query**: `lang` (`it` o `en`).
+- **Tipo di dato restituito**: `application/json` (`Vec<TmdbSearchResult>`)
+
+#### `GET /trending`
+*(Alias: `/tmdb/trending`)*
+- **Descrizione**: Restituisce i contenuti (Film e Serie TV) **di tendenza**.
+- **Parametri Query**:
+  - `window` *(opzionale)*: `day` (default) o `week`.
+  - `lang` *(opzionale)*: `it` (default) o `en`.
+- **Tipo di dato restituito**: `application/json` (`Vec<TmdbSearchResult>`)
+- **Esempio di richiesta**:
+  ```bash
+  curl -s "http://localhost:5555/trending?window=day"
+  ```
+
+#### `GET /tv/{tmdb_id}/seasons`
+*(Alias: `/tmdb/tv/{tmdb_id}/seasons`)*
+- **Descrizione**: Restituisce la struttura completa di tutte le stagioni disponibili per una serie TV con nome della stagione e conteggio esatto degli episodi.
+- **Parametri Percorso (Path)**:
+  - `{tmdb_id}` *(numero)*: ID TMDB della serie TV.
+- **Parametri Query**: `lang` (`it` o `en`).
+- **Tipo di dato restituito**: `application/json` (`TvSeasonsResponse`)
+- **Esempio di richiesta**:
+  ```bash
+  curl -s "http://localhost:5555/tv/1396/seasons"
+  ```
+- **Esempio di risposta**:
+  ```json
+  {
+    "tmdb_id": 1396,
+    "series_name": "Breaking Bad",
+    "seasons": [
+      { "season_number": 0, "name": "Speciali", "episode_count": 9 },
+      { "season_number": 1, "name": "Stagione 1", "episode_count": 7 },
+      { "season_number": 2, "name": "Stagione 2", "episode_count": 13 },
+      { "season_number": 3, "name": "Stagione 3", "episode_count": 13 },
+      { "season_number": 4, "name": "Stagione 4", "episode_count": 13 },
+      { "season_number": 5, "name": "Stagione 5", "episode_count": 16 }
+    ]
+  }
+  ```
+
+---
+
+### 3. Ricerca Globale TMDB
+
+#### `GET /search`
+*(Alias: `/tmdb/search`, `/movie/search`, `/tv/search`)*
+- **Descrizione**: Cerca film e serie TV per titolo sul database TMDB.
+- **Parametri Query**:
+  - `q` *(obbligatorio)*: Termine di ricerca (es. `fight club`, `breaking bad`).
+  - `type` *(opzionale)*: Filtro tipologia: `all` (default), `movie` o `tv`.
+  - `lang` *(opzionale)*: `it` o `en`.
+- **Tipo di dato restituito**: `application/json` (`Vec<TmdbSearchResult>`)
+- **Esempio di richiesta**:
+  ```bash
+  curl -s "http://localhost:5555/search?q=fight%20club"
+  ```
+- **Esempio di risposta**:
+  ```json
+  [
+    {
+      "id": 550,
+      "title": "Fight Club",
+      "original_title": "Fight Club",
+      "media_type": "movie",
+      "overview": "Un impiegato insonne e un fabbricante di sapone carismatico fondano un club di combattimenti clandestino...",
+      "poster_path": "/pB8BM7pdSp6B6Ih7QZ4DrQ3PmJK.jpg",
+      "poster_url": "https://image.tmdb.org/t/p/w500/pB8BM7pdSp6B6Ih7QZ4DrQ3PmJK.jpg",
+      "backdrop_url": "https://image.tmdb.org/t/p/w1280/hZkgoQYus5vegHoetLkCJzb17zJ.jpg",
+      "release_date": "1999-10-15",
+      "vote_average": 8.441,
+      "stream_url": "http://localhost:5555/movie/550/"
+    }
+  ]
+  ```
+
+---
+
+### 4. Streaming Film (VixSrc)
+
+#### `GET /movie/{tmdb_id}/`
+*(Supporta sia `/movie/{tmdb_id}` che `/movie/{tmdb_id}/`)*
+- **Descrizione**: Ottiene il flusso di streaming o i metadati di un film.
+- **Parametri Percorso**:
+  - `{tmdb_id}`: ID TMDB del film (es. `550`).
+- **Parametri Query**:
+  - `lang` *(opzionale)*: Lingua audio preferita (`it` o `en`, default `it`).
+  - `format` *(opzionale)*:
+    - Ometti parametro: Restituisce direttamente il testo della playlist M3U8 (`application/vnd.apple.mpegurl`).
+    - `format=json`: Restituisce l'oggetto JSON `StreamInfo` con le URL dirette, tracce audio, sottotitoli e varianti video.
+    - `format=m3u`: Restituisce il file playlist formato IPTV (`#EXTINF`).
+  - `redirect=true` *(opzionale)*: Effettua un redirect HTTP 307 diretto all'URL CDN della playlist.
+  - `currentInfo=true` *(opzionale)*: Restituisce i metadati del film (`NextEpisodeResponse`).
+  - `nextepisode=true` *(opzionale)*: Verifica se il titolo ha episodi successivi (per i film restituisce `has_next: false`).
+
+#### Esempi di Streaming Film:
+
+1. **Riproduzione diretta M3U8 (per VLC, Infuse, ExoPlayer, iOS AVPlayer)**:
+   ```bash
+   curl -s "http://localhost:5555/movie/550/?lang=it"
+   ```
+   *Risposta (Content-Type: `application/vnd.apple.mpegurl`)*:
+   ```m3u8
+   #EXTM3U
+   #EXT-X-VERSION:3
+   #EXT-X-INDEPENDENT-SEGMENTS
+   #EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio",NAME="Italiano",DEFAULT=YES,AUTOSELECT=YES,LANGUAGE="ita",URI="..."
+   #EXT-X-STREAM-INF:BANDWIDTH=4500000,RESOLUTION=1920x1080,AUDIO="audio"
+   https://.../index.m3u8
+   ```
+
+2. **Dati completi in formato JSON (`?format=json`)**:
+   ```bash
+   curl -s "http://localhost:5555/movie/550/?format=json"
+   ```
+   *Risposta*:
+   ```json
+   {
+     "title": "Fight Club",
+     "source": "vixsrc",
+     "playlist_url": "https://vixsrc.to/playlist/170060?token=...&expires=...&lang=it",
+     "embed_url": "https://vixsrc.to/embed/170060?...",
+     "m3u8_content": "#EXTM3U\n...",
+     "audio": [
+       { "language": "ita", "name": "Italiano", "url": "..." },
+       { "language": "eng", "name": "English", "url": "..." }
+     ],
+     "subtitles": [
+       { "language": "ita", "name": "Italiano", "url": "..." }
+     ],
+     "qualities": [
+       { "resolution": "1920x1080", "bandwidth": 4500000, "url": "..." },
+       { "resolution": "1280x720", "bandwidth": 2500000, "url": "..." }
+     ]
+   }
+   ```
+
+3. **Verifica Episodio Corrente (`?currentInfo=true`)**:
+   ```bash
+   curl -s "http://localhost:5555/movie/550/?currentInfo=true"
+   ```
+   *Risposta*:
+   ```json
+   {
+     "has_next": false,
+     "tmdb_id": 550,
+     "series_name": "Fight Club",
+     "media_type": "movie",
+     "message": "Questo titolo TMDB è un film singolo."
+   }
+   ```
+
+---
+
+### 5. Streaming Serie TV (VixSrc)
+
+#### `GET /tv/{tmdb_id}/{season}/{episode}/`
+*(Supporta sia `/tv/{id}` per default S1E1, sia `/tv/{id}/{season}/{episode}/`)*
+- **Descrizione**: Ottiene il flusso di streaming o i metadati di uno specifico episodio di una serie TV.
+- **Parametri Percorso**:
+  - `{tmdb_id}`: ID TMDB della serie TV (es. `1396` per Breaking Bad).
+  - `{season}`: Numero della stagione (es. `1`).
+  - `{episode}`: Numero dell'episodio (es. `1`).
+- **Parametri Query**:
+  - `lang`: `it` (default) o `en`.
+  - `format`: `json` o `m3u`.
+  - `redirect=true`: Redirect 307 diretto alla CDN video.
+  - `currentInfo=true`: Restituisce le informazioni dell'episodio corrente (nome serie, nome dell'episodio da TMDB, disponibilità prossimo episodio).
+  - `nextepisode=true`: Calcola se esiste l'episodio successivo (nella stessa stagione o nella stagione seguente) e ne restituisce numeri e titolo.
+
+#### Esempi di Streaming Serie TV:
+
+1. **Stream M3U8 Episodio S01E01**:
+   ```bash
+   curl -s "http://localhost:5555/tv/1396/1/1/?lang=it"
+   ```
+
+2. **Controllo Metadati Episodio Corrente (`?currentInfo=true`)**:
+   ```bash
+   curl -s "http://localhost:5555/tv/1396/1/1/?currentInfo=true"
+   ```
+   *Risposta*:
+   ```json
+   {
+     "has_next": true,
+     "tmdb_id": 1396,
+     "series_name": "Breaking Bad",
+     "episode_name": "Questione di chimica",
+     "season": 1,
+     "episode": 1,
+     "next_season": 1,
+     "next_episode": 2,
+     "media_type": "tv"
+   }
+   ```
+
+3. **Calcolo Prossimo Episodio (`?nextepisode=true`)**:
+   ```bash
+   curl -s "http://localhost:5555/tv/1396/1/1/?nextepisode=true"
+   ```
+   *Risposta*:
+   ```json
+   {
+     "has_next": true,
+     "tmdb_id": 1396,
+     "series_name": "Breaking Bad",
+     "episode_name": "Senza ritorno",
+     "season": 1,
+     "episode": 2,
+     "next_season": 1,
+     "next_episode": 2,
+     "media_type": "tv"
+   }
+   ```
+   > Se ci si trova all'ultimo episodio della stagione, l'API calcola automaticamente `next_season: 2, next_episode: 1`. Se la serie è conclusa, ritorna `has_next: false` con messaggio di fine serie.
+
+---
+
+### 6. Streaming e Ricerca Anime (AnimeUnity)
+
+#### `GET /anime/{anime_id}/{episode}/`
+- **Descrizione**: Restituisce il flusso di streaming HLS di un episodio anime da AnimeUnity.
+- **Parametri Percorso**:
+  - `{anime_id}`: ID AnimeUnity dell'anime (es. `4290` per Solo Leveling).
+  - `{episode}`: Numero dell'episodio (es. `1`).
+- **Parametri Query**: `format=json`, `format=m3u`, `redirect=true`, `currentInfo=true`, `nextepisode=true`.
+- **Esempio di richiesta**:
+  ```bash
+  curl -s "http://localhost:5555/anime/4290/1/"
+  ```
+
+#### `GET /anime/{anime_id}/episodes`
+*(Alias: `/anime/{anime_id}/info`)*
+- **Descrizione**: Restituisce l'elenco completo di tutti gli episodi disponibili per un anime.
+- **Tipo di dato restituito**: `application/json` (`AnimeEpisodesResponse`)
+- **Esempio di richiesta**:
+  ```bash
+  curl -s "http://localhost:5555/anime/4290/episodes"
+  ```
+- **Esempio di risposta**:
+  ```json
+  {
+    "episodes_count": 12,
+    "current_episode": null,
+    "episodes": [
+      { "id": 105432, "number": "1", "file_name": "Solo_Leveling_Ep_1_ITA.mp4" },
+      { "id": 105433, "number": "2", "file_name": "Solo_Leveling_Ep_2_ITA.mp4" }
+    ]
+  }
+  ```
+
+#### `GET /anime/search?q={query}`
+- **Descrizione**: Cerca anime per titolo tramite la LiveSearch di AnimeUnity.
+- **Parametri Query**:
+  - `q` *(obbligatorio)*: Termine di ricerca (es. `solo leveling`, `dragon ball`).
+- **Tipo di dato restituito**: `application/json` (`Vec<AnimeRecord>`)
+- **Esempio di richiesta**:
+  ```bash
+  curl -s "http://localhost:5555/anime/search?q=solo%20leveling"
+  ```
+
+---
+
+### 7. Gestione Preferiti (Watchlist Persistente)
+
+Il sistema dei preferiti consente di memorizzare film, serie TV e anime. I dati vengono salvati localmente su disco nel file `data/favorites.json`.
+
+#### `GET /favorites`
+*(Alias: `/api/favorites`)*
+- **Descrizione**: Restituisce l'elenco di tutti i preferiti salvati, ordinati dal più recente.
+- **Parametri Query**:
+  - `type` *(opzionale)*: Filtra per tipo (`movie`, `tv` o `anime`).
+- **Tipo di dato restituito**: `application/json` (`Vec<FavoriteItem>`)
+- **Esempio di richiesta**:
+  ```bash
+  curl -s "http://localhost:5555/favorites"
+  ```
+- **Esempio di risposta**:
+  ```json
+  [
+    {
+      "id": 1396,
+      "media_type": "tv",
+      "title": "Breaking Bad",
+      "poster_url": "https://image.tmdb.org/t/p/w500/ztkUQFLlC19CCMYHW9o1zWhJRNq.jpg",
+      "release_date": "2008-01-20",
+      "season": 1,
+      "episode": 1,
+      "stream_url": "http://localhost:5555/tv/1396/1/1/",
+      "added_at": "2026-09-24T19:50:11.972095542+00:00"
+    }
+  ]
+  ```
+
+#### `POST /favorites`
+*(Alias: `/api/favorites`)*
+- **Descrizione**: Aggiunge o aggiorna un titolo nei preferiti.
+- **Corpo della Richiesta (JSON)**:
+  ```json
+  {
+    "id": 1396,
+    "media_type": "tv",
+    "title": "Breaking Bad",
+    "poster_url": "https://image.tmdb.org/t/p/w500/ztkUQFLlC19CCMYHW9o1zWhJRNq.jpg",
+    "release_date": "2008-01-20",
+    "season": 1,
+    "episode": 1
+  }
+  ```
+- **Tipo di dato restituito**: `201 Created` con l'oggetto `FavoriteItem` salvato.
+- **Esempio di richiesta con curl**:
+  ```bash
+  curl -s -X POST http://localhost:5555/favorites \
+    -H "Content-Type: application/json" \
+    -d '{"id": 550, "media_type": "movie", "title": "Fight Club", "poster_url": "https://image.tmdb.org/t/p/w500/pB8BM7pdSp6B6Ih7QZ4DrQ3PmJK.jpg"}'
+  ```
+
+#### `DELETE /favorites/{media_type}/{id}`
+*(Alias: `/api/favorites/{media_type}/{id}`)*
+- **Descrizione**: Rimuove un titolo dai preferiti.
+- **Parametri Percorso**:
+  - `{media_type}`: `movie`, `tv` o `anime`.
+  - `{id}`: Identificativo numerico.
+- **Tipo di dato restituito**: `application/json`
+  ```json
+  {
+    "id": 1396,
+    "media_type": "tv",
+    "removed": true,
+    "success": true
+  }
+  ```
+- **Esempio di richiesta**:
+  ```bash
+  curl -s -X DELETE "http://localhost:5555/favorites/tv/1396"
+  ```
+
+#### `GET /favorites/check/{media_type}/{id}`
+*(Alias: `/api/favorites/check/{media_type}/{id}`)*
+- **Descrizione**: Verifica rapida per sapere se un elemento è presente nei preferiti (utile per colorare icone a stella ⭐ nei frontend).
+- **Tipo di dato restituito**: `application/json`
+  ```json
+  {
+    "id": 1396,
+    "is_favorite": true,
+    "media_type": "tv"
+  }
+  ```
+
+---
+
+## 📦 Modelli e Schemi Dati JSON
+
+### `TmdbSearchResult`
+```typescript
+interface TmdbSearchResult {
+  id: number;                   // ID TMDB
+  title: string;                // Titolo tradotto o principale
+  original_title?: string;      // Titolo originale
+  media_type: "movie" | "tv";   // Tipologia
+  overview?: string;            // Trama / sinossi
+  poster_path?: string;         // Percorso relativo poster TMDB
+  poster_url?: string;          // URL assoluto poster a 500px
+  backdrop_url?: string;        // URL assoluto sfondo orizzontale a 1280px
+  release_date?: string;        // Data di uscita o trasmissione
+  vote_average?: number;        // Media voti TMDB (es. 8.4)
+  stream_url: string;           // URL diretto EasyStream per la riproduzione
+}
+```
+
+### `TvSeasonsResponse` & `SeasonItem`
+```typescript
+interface TvSeasonsResponse {
+  tmdb_id: number;
+  series_name?: string;
+  seasons: SeasonItem[];
+}
+
+interface SeasonItem {
+  season_number: number;        // Numero stagione (0 = speciali, 1 = stagione 1)
+  name: string;                 // Nome stagione (es. "Stagione 1")
+  episode_count: number;        // Conteggio episodi disponibili
+}
+```
+
+### `StreamInfo`
+```typescript
+interface StreamInfo {
+  title: string;
+  source: "vixsrc" | "animeunity";
+  playlist_url: string;         // URL HLS master (.m3u8)
+  embed_url?: string;
+  m3u8_content: string;         // Testo completo playlist M3U8
+  audio: AudioTrack[];
+  subtitles: SubtitleTrack[];
+  qualities: QualityVariant[];
+}
+
+interface AudioTrack {
+  language: string;             // Codice lingua (es. "ita", "eng")
+  name: string;                 // Nome leggibile (es. "Italiano")
+  url: string;                  // URL traccia audio
+}
+
+interface SubtitleTrack {
+  language: string;             // Codice lingua (es. "ita")
+  name: string;                 // Nome sottotitoli
+  url: string;                  // URL traccia vtt / srt
+}
+
+interface QualityVariant {
+  resolution?: string;          // es. "1920x1080"
+  bandwidth?: number;           // Bitrate in bps
+  url: string;                  // URL playlist variante
+}
+```
+
+### `NextEpisodeResponse`
+```typescript
+interface NextEpisodeResponse {
+  has_next: boolean;            // true se esiste un episodio successivo
+  tmdb_id: number;
+  series_name?: string;         // Titolo serie TV o film
+  episode_name?: string;        // Titolo ufficiale dell'episodio
+  season?: number;              // Stagione richiesta o calcolata
+  episode?: number;             // Episodio richiesto o calcolato
+  next_season?: number;         // Stagione del prossimo episodio
+  next_episode?: number;        // Numero del prossimo episodio
+  media_type: "movie" | "tv";
+  message?: string;             // Messaggio (es. fine serie o film singolo)
+}
+```
+
+### `FavoriteItem`
+```typescript
+interface FavoriteItem {
+  id: number;
+  media_type: "movie" | "tv" | "anime";
+  title: string;
+  original_title?: string;
+  poster_url?: string;
+  backdrop_url?: string;
+  overview?: string;
+  release_date?: string;
+  vote_average?: number;
+  season?: number;
+  episode?: number;
+  stream_url: string;
+  added_at: string;             // Timestamp ISO 8601 (es. "2026-09-24T19:50:11Z")
+}
+```
+
+---
+
+## 🚦 Codici di Stato HTTP ed Errori
+
+Tutti gli endpoint seguono le convenzioni standard REST HTTP. In caso di errore, il corpo della risposta contiene un oggetto JSON esplicativo:
+
+| Codice HTTP | Significato | Esempio Body Risposta |
+|:---|:---|:---|
+| **200 OK** | Richiesta completata con successo | `{ ... }` oppure testo M3U8 |
+| **201 Created** | Elemento creato con successo (es. Preferito aggiunto) | `FavoriteItem` |
+| **307 Temporary Redirect** | Reindirizzamento temporaneo alla CDN (`?redirect=true`) | Header `Location: https://...` |
+| **400 Bad Request** | Parametro non valido o mancante | `{"error": "TMDB ID must be a number"}` |
+| **404 Not Found** | Titolo o flusso non trovato sulla sorgente | `{"error": "Movie not found", "tmdb_id": "999"}` |
+| **500 Internal Server Error** | Errore interno o mancata risposta della sorgente remota | `{"error": "Failed to query upstream"}` |
+
+---
+
+## 📺 Integrazione con Player Esterni
+
+Grazie all'architettura conforme agli standard Apple HLS, gli endpoint di EasyStream possono essere passati direttamente a qualsiasi player video:
+
+### 1. VLC Media Player
+- Menu **Media** ➔ **Apri flusso di rete...**
+- Inserisci: `http://localhost:5555/movie/550/?lang=it` oppure `http://localhost:5555/tv/1396/1/1/?lang=it`
+- Clicca **Riproduci**.
+
+### 2. Apple Infuse (iOS, iPadOS, tvOS, macOS)
+- Aggiungi URL diretto: `http://[IP-DEL-SERVER]:5555/movie/550/?lang=it`
+- Supporta selezione tracce audio multicanale e sottotitoli integrati.
+
+### 3. HLS.js (Applicazioni Web HTML5)
+```javascript
+const video = document.getElementById('my-video');
+const hls = new Hls();
+hls.loadSource('http://localhost:5555/tv/1396/1/1/?lang=it');
+hls.attachMedia(video);
+hls.on(Hls.Events.MANIFEST_PARSED, () => video.play());
+```
+
+### 4. Client IPTV (Playlist M3U)
+- Utilizza il parametro `?format=m3u`:
+  ```bash
+  curl -s "http://localhost:5555/tv/1396/1/1/?format=m3u" > playlist.m3u
+  ```

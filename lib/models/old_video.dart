@@ -1,3 +1,5 @@
+/*
+
 import 'package:onlystream/utils/constants.dart';
 
 // [Audio_Track_Model]
@@ -18,7 +20,7 @@ class Episode {
 }
 
 // [Video_Model]
-class Video {
+class ShowVideo {
   final int id;
   final String title;
   final String type; // "movie" or "series"
@@ -27,7 +29,7 @@ class Video {
   final Episode? nextEpisode;
   final bool hasNext;
 
-  Video({
+  ShowVideo({
     required this.id,
     required this.title,
     required this.type,
@@ -38,7 +40,7 @@ class Video {
   });
 
   // Factory constructor for parsing API response
-  factory Video.fromJson(Map<String, dynamic> json) {
+  factory ShowVideo.fromJson(Map<String, dynamic> json) {
     final mediaType = json['media_type'] as String? ?? 'movie';
     final isTv = mediaType == 'tv' || mediaType == 'series';
     final hasNext = json['has_next'] as bool? ?? false;
@@ -56,7 +58,7 @@ class Video {
     final nextEpNum = json['next_episode'] as int?;
     final nextEpTitle = json['next_episode_title'] as String?;
 
-    return Video(
+    return ShowVideo(
       id: json['tmdb_id'] as int? ?? 0,
       title:
           json['series_name'] as String? ??
@@ -95,3 +97,4 @@ class Video {
     return "${AppConstants.baseUrl}/tv/$id/$season/$episode/?lang=$language";
   }
 }
+*/

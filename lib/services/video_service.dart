@@ -1,75 +1,74 @@
-import 'dart:convert';
+import 'package:onlystream/models/video/movie_model.dart';
+import 'package:onlystream/models/video/tv_show_model.dart';
+import 'package:onlystream/models/video/video_model.dart';
+import 'package:onlystream/services/api/api.dart';
 
-import 'package:flutter/foundation.dart';
-import 'package:http/http.dart' as http;
-import 'package:onlystream/models/video_model.dart';
-import 'package:onlystream/utils/constants.dart';
-
-// [Video_Service]
 class VideoService {
-  /// Fetches next episode metadata from endpoint:
-  /// http://localhost:5555/tv/{id}/{season}/{episode}/?nextepisode=true
-  static Future<Video?> fetchNextEpisode({
-    required int tvId,
-    required int season,
-    required int episode,
+  /// Risolve l'URL di streaming HLS (.m3u8) appropriato per un film o una serie TV.
+  /// Riceve:
+  ///   - `video` (VideoModel): Istanza del contenuto multimediale (MovieModel o TvShowModel).
+  ///   - `season` (int, default 1): Numero della stagione per le serie TV.
+  ///   - `episode` (int, default 1): Numero dell'episodio per le serie TV.
+  ///   - `language` (String, default 'it'): Codice lingua dello stream.
+  /// Ritorna:
+  ///   - `String`: URL completo dello stream HLS.
+  static String getStreamUrl(
+    VideoModel video, {
+    int season = 1,
+    int episode = 1,
     String language = 'it',
-  }) async {
-    final urlString =
-        '${AppConstants.baseUrl}/tv/$tvId/$season/$episode/?nextepisode=true&lang=$language';
-    debugPrint('[VideoService] Fetching next episode from API: $urlString');
-
-    try {
-      final response = await http
-          .get(Uri.parse(urlString))
-          .timeout(const Duration(seconds: 5));
-
-      if (response.statusCode == 200) {
-        final Map<String, dynamic> data = json.decode(response.body);
-        debugPrint(
-          '[VideoService] API returned next episode data successfully',
-        );
-        return Video.fromJson(data);
-      } else {
-        debugPrint(
-          '[VideoService] API request failed with status code: ${response.statusCode}',
-        );
-      }
-    } catch (e) {
-      debugPrint('[VideoService] Failed to fetch next episode via API: $e');
+  }) {
+    if (video is MovieModel || video.getType() == 'movie') {
+      return MovieApi.getStreamUrl(video.tmdb_id, lang: language);
+    } else {
+      return TvApi.getStreamUrl(video.tmdb_id, season, episode, lang: language);
     }
-    return null;
   }
 
-  static Future<Video?> fetchCurrentEpisode({
-    required int tvId,
+  /// Recupera i metadati del prossimo episodio per una serie TV.
+  /// Riceve:
+  ///   - `tmdbId` (String): ID TMDB della serie televisiva.
+  ///   - `season` (int): Numero della stagione corrente.
+  ///   - `episode` (int): Numero dell'episodio corrente.
+  ///   - `language` (String, default 'it'): Lingua dei metadati.
+  /// Ritorna:
+  ///   - `Future<Map<String, dynamic>?>`: Mappa con i dettagli dell'episodio successivo (has_next, next_season, next_episode, episode_name).
+  static Future<Map<String, dynamic>?> fetchNextEpisode({
+    required String tmdbId,
     required int season,
     required int episode,
     String language = 'it',
-  }) async {
-    final urlString =
-        '${AppConstants.baseUrl}/tv/$tvId/$season/$episode/?currentInfo=true&lang=$language';
-    debugPrint('[VideoService] Fetching next episode from API: $urlString');
+  }) {
+    return TvApi.getNextEpisode(tmdbId, season, episode, lang: language);
+  }
 
-    try {
-      final response = await http
-          .get(Uri.parse(urlString))
-          .timeout(const Duration(seconds: 5));
+  /// Recupera le informazioni descrittive dell'episodio corrente di una serie TV.
+  /// Riceve:
+  ///   - `tmdbId` (String): ID TMDB della serie televisiva.
+  ///   - `season` (int): Numero della stagione.
+  ///   - `episode` (int): Numero dell'episodio.
+  ///   - `language` (String, default 'it'): Lingua dei metadati.
+  /// Ritorna:
+  ///   - `Future<Map<String, dynamic>?>`: Mappa con i metadati dell'episodio corrente.
+  static Future<Map<String, dynamic>?> fetchCurrentEpisodeInfo({
+    required String tmdbId,
+    required int season,
+    required int episode,
+    String language = 'it',
+  }) {
+    return TvApi.getCurrentInfo(tmdbId, season, episode, lang: language);
+  }
 
-      if (response.statusCode == 200) {
-        final Map<String, dynamic> data = json.decode(response.body);
-        debugPrint(
-          '[VideoService] API returned next episode data successfully',
-        );
-        return Video.fromJson(data);
-      } else {
-        debugPrint(
-          '[VideoService] API request failed with status code: ${response.statusCode}',
-        );
-      }
-    } catch (e) {
-      debugPrint('[VideoService] Failed to fetch next episode via API: $e');
-    }
-    return null;
+  /// Recupera l'elenco delle stagioni e degli episodi per una serie TV.
+  /// Riceve:
+  ///   - `tmdbId` (String): ID TMDB della serie televisiva.
+  ///   - `language` (String, default 'it'): Lingua dei titoli delle stagioni.
+  /// Ritorna:
+  ///   - `Future<List<Sesson>>`: Lista di oggetti Sesson con episodi enumerati.
+  static Future<List<Sesson>> fetchTvSeasons(
+    String tmdbId, {
+    String language = 'it',
+  }) {
+    return DiscoveryApi.getTvSeasons(tmdbId, lang: language);
   }
 }

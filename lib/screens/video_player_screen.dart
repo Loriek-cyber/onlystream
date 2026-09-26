@@ -4,14 +4,22 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
-import 'package:onlystream/models/video_model.dart' as model;
+import 'package:onlystream/models/video/tv_show_model.dart';
+import 'package:onlystream/models/video/video_model.dart';
 import 'package:onlystream/services/video_service.dart';
 
 // [Video_Player_Screen]
 class VideoPlayerScreen extends StatefulWidget {
-  final model.Video video;
+  final VideoModel video;
+  final int initialSeason;
+  final int initialEpisode;
 
-  const VideoPlayerScreen({super.key, required this.video});
+  const VideoPlayerScreen({
+    super.key,
+    required this.video,
+    this.initialSeason = 1,
+    this.initialEpisode = 1,
+  });
 
   @override
   State<VideoPlayerScreen> createState() => _VideoPlayerScreenState();
@@ -19,7 +27,10 @@ class VideoPlayerScreen extends StatefulWidget {
 
 class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
   // [State_Variables]
-  late model.Video currentVideo;
+  late VideoModel currentVideo;
+  late int currentSeason;
+  late int currentEpisode;
+  String? currentEpisodeTitle;
 
   late final Player _player;
   late final VideoController _videoController;
@@ -47,9 +58,16 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
   void initState() {
     super.initState();
     currentVideo = widget.video;
+    currentSeason = widget.initialSeason;
+    currentEpisode = widget.initialEpisode;
 
     _player = Player();
-    _videoController = VideoController(_player);
+    _videoController = VideoController(
+      _player,
+      configuration: const VideoControllerConfiguration(
+        enableHardwareAcceleration: false,
+      ),
+    );
 
     _setupListeners();
     _openMedia();
@@ -72,7 +90,9 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
         if (mounted) setState(() => _duration = duration);
       }),
       _player.stream.completed.listen((completed) {
-        if (completed && (currentVideo.type == 'series' || currentVideo.hasNext)) {
+        if (completed &&
+            (currentVideo is TvShowModel ||
+                currentVideo.getType() == 'serie')) {
           _playNextEpisode();
         }
       }),
@@ -108,9 +128,13 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
 
   // [Media_Control_Methods]
   void _openMedia() {
-    final streamUrl = currentVideo.getStreamUrl(language: _selectedLanguage);
-    debugPrint('[MediaStream] Opening M3U8/HLS stream');
-    debugPrint('[MediaStream] URL: $streamUrl');
+    final streamUrl = VideoService.getStreamUrl(
+      currentVideo,
+      season: currentSeason,
+      episode: currentEpisode,
+      language: _selectedLanguage,
+    );
+    debugPrint('[MediaStream] Opening M3U8/HLS stream: $streamUrl');
 
     setState(() {
       _hasError = false;
@@ -126,57 +150,69 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
   }
 
   Future<void> _playNextEpisode() async {
-    final currentEp = currentVideo.currentEpisode ?? currentVideo.nextEpisode;
-    final int season = currentEp?.season ?? 1;
-    final int episode = currentEp?.number ?? 1;
+    final isTv =
+        currentVideo is TvShowModel || currentVideo.getType() == 'serie';
+    if (!isTv) return;
 
     debugPrint(
-      '[NextEpisode] Requesting next episode metadata for TV ${currentVideo.id}, S$season E$episode',
+      '[NextEpisode] Requesting next episode metadata for TV ${currentVideo.tmdb_id}, S$currentSeason E$currentEpisode',
     );
 
-    // Fetch next episode data from API endpoint:
-    // http://localhost:5555/tv/{id}/{season}/{episode}/?nextepisode=true
-    final fetchedVideo = await VideoService.fetchNextEpisode(
-      tvId: currentVideo.id,
-      season: season,
-      episode: episode,
+    final nextData = await VideoService.fetchNextEpisode(
+      tmdbId: currentVideo.tmdb_id,
+      season: currentSeason,
+      episode: currentEpisode,
       language: _selectedLanguage,
     );
 
     if (!mounted) return;
 
-    if (fetchedVideo != null) {
+    if (nextData != null && nextData['has_next'] == true) {
       debugPrint('[NextEpisode] API returned next episode successfully');
       setState(() {
-        currentVideo = fetchedVideo;
+        currentSeason = nextData['next_season'] as int? ?? currentSeason;
+        currentEpisode =
+            nextData['next_episode'] as int? ?? (currentEpisode + 1);
+        currentEpisodeTitle = nextData['episode_name'] as String?;
         _audioTracks = [];
         _activeAudioTrack = null;
       });
     } else {
-      // Fallback if API server is offline or mock data environment:
-      // Dynamically advance episode number so playback never stops!
-      debugPrint('[NextEpisode] Dynamic fallback for next episode');
-      final nextSeason = currentVideo.nextEpisode?.season ?? season;
-      final nextEpNumber = currentVideo.nextEpisode?.number ?? (episode + 1);
+      debugPrint('[NextEpisode] Advancing to next episode locally');
+      int nextSeason = currentSeason;
+      int nextEpisodeNum = currentEpisode + 1;
+      String? nextTitle;
+
+      if (currentVideo is TvShowModel) {
+        final tvShow = currentVideo as TvShowModel;
+        final currentSessList =
+            tvShow.sesson.where((s) => s.number == currentSeason).toList();
+        if (currentSessList.isNotEmpty) {
+          final currentSess = currentSessList.first;
+          final hasNextEp = currentSess.list_episode
+              .any((e) => e.number == nextEpisodeNum);
+          if (hasNextEp) {
+            final ep = currentSess.list_episode
+                .firstWhere((e) => e.number == nextEpisodeNum);
+            nextTitle = ep.title;
+          } else {
+            final nextSessList = tvShow.sesson
+                .where((s) => s.number == currentSeason + 1)
+                .toList();
+            if (nextSessList.isNotEmpty &&
+                nextSessList.first.list_episode.isNotEmpty) {
+              nextSeason = currentSeason + 1;
+              nextEpisodeNum = nextSessList.first.list_episode.first.number;
+              nextTitle = nextSessList.first.list_episode.first.title;
+            }
+          }
+        }
+      }
 
       setState(() {
-        currentVideo = model.Video(
-          id: currentVideo.id,
-          title: currentVideo.title,
-          type: currentVideo.type,
-          audioTracks: currentVideo.audioTracks,
-          currentEpisode: model.Episode(
-            season: nextSeason,
-            number: nextEpNumber,
-            title: 'Episode $nextEpNumber',
-          ),
-          nextEpisode: model.Episode(
-            season: nextSeason,
-            number: nextEpNumber + 1,
-            title: 'Episode ${nextEpNumber + 1}',
-          ),
-          hasNext: true,
-        );
+        currentSeason = nextSeason;
+        currentEpisode = nextEpisodeNum;
+        currentEpisodeTitle = nextTitle ?? 'Episode $nextEpisodeNum';
         _audioTracks = [];
         _activeAudioTrack = null;
       });
@@ -316,6 +352,9 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
 
   // [Player_Overlay_Controls]
   Widget _buildPlayerControls() {
+    final isSeries =
+        currentVideo is TvShowModel || currentVideo.getType() == 'serie';
+
     return Container(
       decoration: const BoxDecoration(
         gradient: LinearGradient(
@@ -349,7 +388,9 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
                 ),
                 Expanded(
                   child: Text(
-                    currentVideo.title,
+                    isSeries
+                        ? '${currentVideo.name} • S$currentSeason E$currentEpisode${currentEpisodeTitle != null ? ' - $currentEpisodeTitle' : ''}'
+                        : currentVideo.name,
                     style: const TextStyle(
                       color: Colors.white,
                       fontSize: 16,
@@ -445,7 +486,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
                     const Spacer(),
 
                     // [Next_Episode_Control]
-                    if (currentVideo.type == "series" || currentVideo.hasNext)
+                    if (isSeries)
                       IconButton(
                         icon: const Icon(Icons.skip_next, color: Colors.white),
                         tooltip: 'Next Episode',
