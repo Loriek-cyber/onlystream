@@ -208,8 +208,13 @@ class DiscoveryApi {
       final List<dynamic> seasonsJson = data['seasons'];
       for (final s in seasonsJson) {
         if (s is Map<String, dynamic>) {
-          final seasonNumber = s['season_number'] as int? ?? 1;
-          final episodeCount = s['episode_count'] as int? ?? 0;
+          final seasonNumber = int.tryParse(s['season_number']?.toString() ?? '') ?? 1;
+          final seasonName = s['name'] as String? ?? (seasonNumber == 0 ? 'Speciali' : 'Stagione $seasonNumber');
+          final rawCount = int.tryParse(s['episode_count']?.toString() ?? '') ?? 0;
+          final episodeCount = rawCount > 0 ? rawCount : (seasonNumber > 0 ? 10 : 0);
+          if (episodeCount == 0 && seasonNumber == 0) {
+            continue;
+          }
           final episodes = List.generate(
             episodeCount,
             (index) => Episode(
@@ -219,10 +224,26 @@ class DiscoveryApi {
               '',
             ),
           );
-          seasons.add(Sesson(seasonNumber, episodes));
+          seasons.add(Sesson(seasonNumber, episodes, seasonName));
         }
       }
     }
-    return seasons;
+    final regularSeasons = seasons.where((s) => s.number > 0).toList()
+      ..sort((a, b) => a.number.compareTo(b.number));
+    final specials = seasons.where((s) => s.number == 0).toList();
+    final sorted = [...regularSeasons, ...specials];
+    if (sorted.isEmpty) {
+      return [
+        Sesson(
+          1,
+          List.generate(
+            10,
+            (index) => Episode('Episodio ${index + 1}', '', index + 1, ''),
+          ),
+          'Stagione 1',
+        ),
+      ];
+    }
+    return sorted;
   }
 }

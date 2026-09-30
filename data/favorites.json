@@ -1,0 +1,11 @@
+[
+  {
+    "id": 1288445,
+    "media_type": "movie",
+    "title": "Mutiny - Inverti la rotta",
+    "poster_url": "https://image.tmdb.org/t/p/w500/o4MXnSWwOnA4kftJ3NwZTIw2PuY.jpg",
+    "overview": "Jason Statham, nei panni dell’ex soldato Cole Reed, si arruola clandestinamente a bordo di una nave mercantile per rintracciare l’assassino del suo facoltoso datore di lavoro. In una spietata caccia all’uomo Reed scopre che dietro l’omicidio si nasconde molto di più di un semplice regolamento di conti. Per arrivare alla verità, dovrà affrontare una complessa cospirazione internazionale e una vecchia minaccia che riaffiora dal suo passato.",
+    "stream_url": "http://localhost:5555/movie/1288445/",
+    "added_at": "2026-09-26T22:39:39.892952191+00:00"
+  }
+]

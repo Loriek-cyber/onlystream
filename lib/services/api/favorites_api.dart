@@ -29,7 +29,7 @@ class FavoritesApi {
   /// Aggiunge o aggiorna un titolo (film, serie TV o anime) nella lista dei preferiti persistente.
   /// Endpoint: POST /favorites
   /// Riceve:
-  ///   - `favoriteData` (Map<String, dynamic>): Dati del preferito (campi: 'id', 'media_type', 'title', opzionali: 'poster_url', 'season', 'episode', ecc.).
+  ///   - `favoriteData` (`Map<String, dynamic>`): Dati del preferito (campi: 'id', 'media_type', 'title', opzionali: 'poster_url', 'season', 'episode', ecc.).
   /// Ritorna:
   ///   - `Future<Map<String, dynamic>?>`: L'oggetto FavoriteItem creato con timestamp, o null in caso di fallimento.
   static Future<Map<String, dynamic>?> addFavorite(
