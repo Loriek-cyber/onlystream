@@ -1,9 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:media_kit/media_kit.dart';
-import 'package:onlystream/screens/video_player_screen.dart';
-import 'package:onlystream/test/test_player.dart';
-
-//import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:onlystream/screens/home_screen.dart';
+import 'package:onlystream/services/download_service.dart';
+import 'package:onlystream/services/server_config_service.dart';
 
 /*
 Be careful to not use Future<void> becouse it breaks the stream
@@ -11,7 +10,8 @@ Be careful to not use Future<void> becouse it breaks the stream
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   MediaKit.ensureInitialized();
-  //await dotenv.load(fileName: ".env");
+  await ServerConfigService.instance.init();
+  await DownloadService.instance.init();
   runApp(const MyApp());
 }
 
@@ -27,10 +27,16 @@ class MyApp extends StatelessWidget {
       theme: ThemeData(
         useMaterial3: true,
         brightness: Brightness.dark,
-        primaryColor: Colors.red,
-        scaffoldBackgroundColor: Colors.black,
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: const Color(0xFF06B6D4),
+          brightness: Brightness.dark,
+          primary: const Color(0xFF06B6D4),
+          secondary: const Color(0xFF3B82F6),
+          surface: const Color(0xFF121722),
+        ),
+        scaffoldBackgroundColor: const Color(0xFF0A0D14),
       ),
-      home: VideoPlayerScreen(video: TestData.breakingBadSeries),
+      home: const HomeScreen(),
     );
   }
 }

@@ -1,17 +1,30 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import 'package:onlystream/models/video_model.dart' as model;
+import 'package:onlystream/services/download_service.dart';
+import 'package:onlystream/services/server_config_service.dart';
 import 'package:onlystream/services/video_service.dart';
+import 'package:onlystream/utils/torrent_launcher.dart';
 
 // [Video_Player_Screen]
 class VideoPlayerScreen extends StatefulWidget {
   final model.Video video;
+  final String? initialLanguage;
+  final String? initialQuality;
+  final String? initialSource;
 
-  const VideoPlayerScreen({super.key, required this.video});
+  const VideoPlayerScreen({
+    super.key,
+    required this.video,
+    this.initialLanguage,
+    this.initialQuality,
+    this.initialSource,
+  });
 
   @override
   State<VideoPlayerScreen> createState() => _VideoPlayerScreenState();
@@ -24,7 +37,9 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
   late final Player _player;
   late final VideoController _videoController;
 
-  final String _selectedLanguage = 'it';
+  late String _selectedLanguage;
+  late String _selectedQuality;
+  late String _selectedSource;
 
   bool _isPlaying = false;
   bool _isBuffering = false;
@@ -47,6 +62,12 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
   void initState() {
     super.initState();
     currentVideo = widget.video;
+    _selectedLanguage =
+        widget.initialLanguage ?? ServerConfigService.instance.defaultLanguage;
+    _selectedQuality =
+        widget.initialQuality ?? ServerConfigService.instance.preferredQuality;
+    _selectedSource =
+        widget.initialSource ?? ServerConfigService.instance.preferredSource;
 
     _player = Player();
     _videoController = VideoController(_player);
@@ -72,7 +93,10 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
         if (mounted) setState(() => _duration = duration);
       }),
       _player.stream.completed.listen((completed) {
-        if (completed && (currentVideo.type == 'series' || currentVideo.hasNext)) {
+        if (completed &&
+            (currentVideo.isSeries ||
+                currentVideo.isAnime ||
+                currentVideo.hasNext)) {
           _playNextEpisode();
         }
       }),
@@ -82,11 +106,6 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
             _audioTracks = tracks.audio;
             _subtitleTracks = tracks.subtitle;
           });
-          debugPrint('[StreamTracks] Audio tracks count: ${tracks.audio.length}');
-          for (final t in tracks.audio) {
-            debugPrint('[StreamTracks]   - ${t.title ?? t.language ?? t.id}');
-          }
-          debugPrint('[StreamTracks] Subtitle tracks count: ${tracks.subtitle.length}');
         }
       }),
       _player.stream.track.listen((track) {
@@ -108,20 +127,31 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
 
   // [Media_Control_Methods]
   void _openMedia() {
-    final streamUrl = currentVideo.getStreamUrl(language: _selectedLanguage);
-    debugPrint('[MediaStream] Opening M3U8/HLS stream');
-    debugPrint('[MediaStream] URL: $streamUrl');
+    final streamUrl = currentVideo.getStreamUrl(
+      language: _selectedLanguage,
+      quality: _selectedQuality,
+      source: _selectedSource,
+    );
+    debugPrint('[MediaStream] Opening stream URL: $streamUrl');
 
     setState(() {
       _hasError = false;
       _errorMessage = '';
     });
 
+    if (currentVideo.localFilePath != null &&
+        currentVideo.localFilePath!.isNotEmpty) {
+      final f = File(currentVideo.localFilePath!);
+      if (f.existsSync()) {
+        _player.open(Media(f.path));
+        return;
+      }
+    }
+
     _player.open(Media(streamUrl));
   }
 
   void _changeAudioTrack(AudioTrack track) {
-    debugPrint('[AudioTrack] Changing audio track to: ${track.title ?? track.id}');
     _player.setAudioTrack(track);
   }
 
@@ -130,32 +160,23 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
     final int season = currentEp?.season ?? 1;
     final int episode = currentEp?.number ?? 1;
 
-    debugPrint(
-      '[NextEpisode] Requesting next episode metadata for TV ${currentVideo.id}, S$season E$episode',
-    );
-
-    // Fetch next episode data from API endpoint:
-    // http://localhost:5555/tv/{id}/{season}/{episode}/?nextepisode=true
     final fetchedVideo = await VideoService.fetchNextEpisode(
       tvId: currentVideo.id,
       season: season,
       episode: episode,
       language: _selectedLanguage,
+      isAnime: currentVideo.isAnime,
     );
 
     if (!mounted) return;
 
     if (fetchedVideo != null) {
-      debugPrint('[NextEpisode] API returned next episode successfully');
       setState(() {
         currentVideo = fetchedVideo;
         _audioTracks = [];
         _activeAudioTrack = null;
       });
     } else {
-      // Fallback if API server is offline or mock data environment:
-      // Dynamically advance episode number so playback never stops!
-      debugPrint('[NextEpisode] Dynamic fallback for next episode');
       final nextSeason = currentVideo.nextEpisode?.season ?? season;
       final nextEpNumber = currentVideo.nextEpisode?.number ?? (episode + 1);
 
@@ -168,12 +189,12 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
           currentEpisode: model.Episode(
             season: nextSeason,
             number: nextEpNumber,
-            title: 'Episode $nextEpNumber',
+            title: 'Episodio $nextEpNumber',
           ),
           nextEpisode: model.Episode(
             season: nextSeason,
             number: nextEpNumber + 1,
-            title: 'Episode ${nextEpNumber + 1}',
+            title: 'Episodio ${nextEpNumber + 1}',
           ),
           hasNext: true,
         );
@@ -182,7 +203,34 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
       });
     }
 
+    DownloadService.instance.addToHistory(currentVideo);
     _openMedia();
+  }
+
+  Future<void> _downloadCurrentFromPlayer() async {
+    final kind = currentVideo.isAnime
+        ? model.MediaKind.anime
+        : (currentVideo.isSeries ? model.MediaKind.tv : model.MediaKind.movie);
+    await DownloadService.instance.enqueueSingle(
+      mediaId: currentVideo.id,
+      title: currentVideo.title,
+      mediaKind: kind,
+      season: currentVideo.currentEpisode?.season ?? 1,
+      episode: currentVideo.currentEpisode?.number ?? 1,
+      language: _selectedLanguage,
+      quality: _selectedQuality,
+      posterUrl: currentVideo.posterUrl,
+    );
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: const Color(0xFF06B6D4),
+          content: Text(
+            'Download avviato per ${currentVideo.title} (${_selectedQuality.toUpperCase()})!',
+          ),
+        ),
+      );
+    }
   }
 
   void _toggleFullscreen() {
@@ -271,14 +319,14 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
                     children: [
                       const Icon(
                         Icons.error_outline,
-                        color: Colors.red,
+                        color: Color(0xFFF43F5E),
                         size: 48,
                       ),
                       const SizedBox(height: 12),
                       Text(
                         _errorMessage.isNotEmpty
                             ? _errorMessage
-                            : 'Error loading video stream',
+                            : 'Errore nel caricamento dello stream da ${ServerConfigService.instance.baseUrl}',
                         style: const TextStyle(
                           color: Colors.white70,
                           fontSize: 14,
@@ -286,13 +334,24 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
                         textAlign: TextAlign.center,
                       ),
                       const SizedBox(height: 16),
-                      ElevatedButton.icon(
-                        onPressed: _openMedia,
-                        icon: const Icon(Icons.refresh),
-                        label: const Text('Retry'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.red,
-                        ),
+                      Wrap(
+                        spacing: 12,
+                        children: [
+                          ElevatedButton.icon(
+                            onPressed: _openMedia,
+                            icon: const Icon(Icons.refresh),
+                            label: const Text('Riprova'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF06B6D4),
+                              foregroundColor: Colors.white,
+                            ),
+                          ),
+                          OutlinedButton.icon(
+                            onPressed: () => Navigator.pop(context),
+                            icon: const Icon(Icons.arrow_back),
+                            label: const Text('Torna Indietro'),
+                          ),
+                        ],
                       ),
                     ],
                   ),
@@ -301,7 +360,9 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
             if (!_hasError)
               Video(controller: _videoController, controls: NoVideoControls),
             if (!_hasError && _isBuffering)
-              const Center(child: CircularProgressIndicator(color: Colors.red)),
+              const Center(
+                child: CircularProgressIndicator(color: Color(0xFF06B6D4)),
+              ),
             if (!_hasError && _showControls)
               AnimatedOpacity(
                 opacity: 1.0,
@@ -316,16 +377,22 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
 
   // [Player_Overlay_Controls]
   Widget _buildPlayerControls() {
+    final epSubtitle = currentVideo.currentEpisode != null
+        ? (currentVideo.isAnime
+            ? ' • Ep ${currentVideo.currentEpisode!.number}'
+            : ' • S${currentVideo.currentEpisode!.season}E${currentVideo.currentEpisode!.number}${currentVideo.currentEpisode!.title != null ? " (${currentVideo.currentEpisode!.title})" : ""}')
+        : '';
+
     return Container(
       decoration: const BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
           colors: [
-            Color.fromRGBO(0, 0, 0, 0.6),
+            Color.fromRGBO(0, 0, 0, 0.72),
             Color.fromRGBO(0, 0, 0, 0.0),
             Color.fromRGBO(0, 0, 0, 0.0),
-            Color.fromRGBO(0, 0, 0, 0.7),
+            Color.fromRGBO(0, 0, 0, 0.78),
           ],
         ),
       ),
@@ -349,7 +416,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
                 ),
                 Expanded(
                   child: Text(
-                    currentVideo.title,
+                    '${currentVideo.title}$epSubtitle',
                     style: const TextStyle(
                       color: Colors.white,
                       fontSize: 16,
@@ -358,21 +425,70 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
+                // Quick Quality Badge
+                ActionChip(
+                  backgroundColor: Colors.black54,
+                  side: const BorderSide(color: Color(0xFF06B6D4)),
+                  label: Text(
+                    '${_selectedQuality.toUpperCase()} • ${_selectedLanguage.toUpperCase()}',
+                    style: const TextStyle(
+                      color: Color(0xFF38BDF8),
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  onPressed: _showQualityAndLanguageDialog,
+                ),
+                const SizedBox(width: 8),
+                IconButton(
+                  tooltip: 'Scarica questo video (MP4)',
+                  icon: const Icon(
+                    Icons.download_for_offline_rounded,
+                    color: Color(0xFF38BDF8),
+                  ),
+                  onPressed: _downloadCurrentFromPlayer,
+                ),
               ],
             ),
           ),
 
           // [Center_Play_Pause_Button]
-          IconButton(
-            iconSize: 64,
-            icon: Icon(
-              _isPlaying ? Icons.pause_circle_filled : Icons.play_circle_filled,
-              color: Colors.white,
-            ),
-            onPressed: () {
-              _player.playOrPause();
-              _startHideControlsTimer();
-            },
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              IconButton(
+                iconSize: 38,
+                icon: const Icon(Icons.replay_10_rounded, color: Colors.white70),
+                onPressed: () {
+                  final target = _position - const Duration(seconds: 10);
+                  _player.seek(target.isNegative ? Duration.zero : target);
+                  _startHideControlsTimer();
+                },
+              ),
+              const SizedBox(width: 20),
+              IconButton(
+                iconSize: 64,
+                icon: Icon(
+                  _isPlaying
+                      ? Icons.pause_circle_filled
+                      : Icons.play_circle_filled,
+                  color: Colors.white,
+                ),
+                onPressed: () {
+                  _player.playOrPause();
+                  _startHideControlsTimer();
+                },
+              ),
+              const SizedBox(width: 20),
+              IconButton(
+                iconSize: 38,
+                icon: const Icon(Icons.forward_10_rounded, color: Colors.white70),
+                onPressed: () {
+                  _player.seek(_position + const Duration(seconds: 10));
+                  _startHideControlsTimer();
+                },
+              ),
+            ],
           ),
 
           // [Bottom_Bar]
@@ -390,17 +506,17 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
                     ),
                     Expanded(
                       child: SliderTheme(
-                        data: SliderThemeData(
+                        data: const SliderThemeData(
                           trackHeight: 3,
-                          thumbShape: const RoundSliderThumbShape(
+                          thumbShape: RoundSliderThumbShape(
                             enabledThumbRadius: 6,
                           ),
-                          overlayShape: const RoundSliderOverlayShape(
+                          overlayShape: RoundSliderOverlayShape(
                             overlayRadius: 12,
                           ),
-                          activeTrackColor: Colors.red,
+                          activeTrackColor: Color(0xFF06B6D4),
                           inactiveTrackColor: Colors.white24,
-                          thumbColor: Colors.red,
+                          thumbColor: Color(0xFF38BDF8),
                         ),
                         child: Slider(
                           value: _duration.inMilliseconds > 0
@@ -441,28 +557,54 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
                       icon: const Icon(Icons.volume_up, color: Colors.white),
                       onPressed: () => _player.setVolume(100.0),
                     ),
+                    IconButton(
+                      tooltip: 'Copia URL Stream M3U8',
+                      icon: const Icon(Icons.copy_rounded, color: Colors.white70, size: 20),
+                      onPressed: () async {
+                        final url = currentVideo.getStreamUrl(
+                          language: _selectedLanguage,
+                          quality: _selectedQuality,
+                          source: _selectedSource,
+                        );
+                        await TorrentLauncher.copyToClipboard(url);
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('URL copiato: $url')),
+                          );
+                        }
+                      },
+                    ),
 
                     const Spacer(),
 
                     // [Next_Episode_Control]
-                    if (currentVideo.type == "series" || currentVideo.hasNext)
+                    if (currentVideo.isSeries ||
+                        currentVideo.isAnime ||
+                        currentVideo.hasNext)
                       IconButton(
                         icon: const Icon(Icons.skip_next, color: Colors.white),
-                        tooltip: 'Next Episode',
+                        tooltip: 'Prossimo Episodio',
                         onPressed: _playNextEpisode,
                       ),
+
+                    // [Quality_&_Language_Control]
+                    IconButton(
+                      icon: const Icon(Icons.high_quality_rounded, color: Colors.white),
+                      tooltip: 'Qualità & Sorgente API',
+                      onPressed: _showQualityAndLanguageDialog,
+                    ),
 
                     // [Audio_Track_Control]
                     IconButton(
                       icon: const Icon(Icons.audiotrack, color: Colors.white),
-                      tooltip: 'Audio Track',
+                      tooltip: 'Tracce Audio HLS',
                       onPressed: _showAudioTracksDialog,
                     ),
 
                     // [Subtitles_Control]
                     IconButton(
                       icon: const Icon(Icons.subtitles, color: Colors.white),
-                      tooltip: 'Subtitles',
+                      tooltip: 'Sottotitoli',
                       onPressed: _showSubtitlesDialog,
                     ),
 
@@ -486,6 +628,73 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
     );
   }
 
+  void _showQualityAndLanguageDialog() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF121722),
+        title: const Text(
+          'Qualità Video & Lingua API',
+          style: TextStyle(color: Colors.white),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Risoluzione Stream HLS:',
+              style: TextStyle(color: Color(0xFF94A3B8), fontSize: 12),
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: ['best', '2160p', '1080p', '720p', '480p'].map((q) {
+                final active = _selectedQuality == q;
+                return ChoiceChip(
+                  label: Text(q == 'best' ? 'Auto (Max)' : q.toUpperCase()),
+                  selected: active,
+                  selectedColor: const Color(0xFF06B6D4),
+                  onSelected: (_) {
+                    setState(() => _selectedQuality = q);
+                    Navigator.pop(ctx);
+                    _openMedia();
+                  },
+                );
+              }).toList(),
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'Lingua Audio Richiesta al Server:',
+              style: TextStyle(color: Color(0xFF94A3B8), fontSize: 12),
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              children: {
+                'it': '🇮🇹 Italiano',
+                'en': '🇬🇧 English',
+                'ja': '🇯🇵 Japanese',
+              }.entries.map((e) {
+                final active = _selectedLanguage == e.key;
+                return ChoiceChip(
+                  label: Text(e.value),
+                  selected: active,
+                  selectedColor: const Color(0xFF06B6D4),
+                  onSelected: (_) {
+                    setState(() => _selectedLanguage = e.key);
+                    Navigator.pop(ctx);
+                    _openMedia();
+                  },
+                );
+              }).toList(),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   // [Audio_Tracks_Dialog]
   void _showAudioTracksDialog() {
     final tracks = _audioTracks
@@ -495,8 +704,8 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        backgroundColor: Colors.grey[900],
-        title: const Text('Audio Track', style: TextStyle(color: Colors.white)),
+        backgroundColor: const Color(0xFF121722),
+        title: const Text('Tracce Audio', style: TextStyle(color: Colors.white)),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: tracks.isEmpty
@@ -504,7 +713,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
                   const Padding(
                     padding: EdgeInsets.all(8.0),
                     child: Text(
-                      'No audio tracks available',
+                      'Nessuna traccia audio secondaria rilevata',
                       style: TextStyle(color: Colors.white70),
                     ),
                   )
@@ -517,7 +726,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
                         style: const TextStyle(color: Colors.white),
                       ),
                       trailing: _activeAudioTrack == track
-                          ? const Icon(Icons.check, color: Colors.red)
+                          ? const Icon(Icons.check, color: Color(0xFF06B6D4))
                           : null,
                       onTap: () {
                         _changeAudioTrack(track);
@@ -540,14 +749,14 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        backgroundColor: Colors.grey[900],
-        title: const Text('Subtitles', style: TextStyle(color: Colors.white)),
+        backgroundColor: const Color(0xFF121722),
+        title: const Text('Sottotitoli', style: TextStyle(color: Colors.white)),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
               title: const Text(
-                'Disable',
+                'Disattiva',
                 style: TextStyle(color: Colors.white),
               ),
               onTap: () {

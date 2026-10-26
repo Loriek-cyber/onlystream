@@ -1,7 +1,7 @@
-import 'dart:ffi';
+// ignore_for_file: non_constant_identifier_names
 
 class TvShowModel {
-  Long id;
+  int id;
   String name;
   String description;
   String tmdb_id;
