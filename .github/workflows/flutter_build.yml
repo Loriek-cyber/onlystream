@@ -244,25 +244,55 @@ jobs:
     name: '[Release] Create Release'
     needs: [test, build-android, build-ios, build-linux, build-windows]
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    if: >-
+      always() &&
+      needs.test.result == 'success' &&
+      (startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch') &&
+      (needs.build-android.result == 'success' ||
+       needs.build-ios.result == 'success' ||
+       needs.build-linux.result == 'success' ||
+       needs.build-windows.result == 'success')
     permissions:
       contents: write
     steps:
-      - name: '[Release] Download all artifacts'
+      - name: '[Release] Download available artifacts'
         uses: actions/download-artifact@v4
         with:
           path: release-artifacts
           merge-multiple: true
 
+      - name: '[Release] Collect built release files'
+        id: collect
+        run: |
+          shopt -s nullglob
+          FILES=(release-artifacts/*.apk release-artifacts/*.tar.gz release-artifacts/*.zip)
+          if [ ${#FILES[@]} -eq 0 ]; then
+            echo "No release artifacts found to publish."
+            exit 1
+          fi
+          {
+            echo "files<<EOF"
+            for f in "${FILES[@]}"; do
+              echo "$f"
+            done
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+          ls -lh "${FILES[@]}"
+
       - name: '[Release] Publish to GitHub Release'
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            release-artifacts/*.apk
-            release-artifacts/*.tar.gz
-            release-artifacts/*.zip
+          files: ${{ steps.collect.outputs.files }}
+          fail_on_unmatched_files: false
           tag_name: ${{ github.ref_type == 'tag' && github.ref_name || 'latest' }}
           name: ${{ github.ref_type == 'tag' && github.ref_name || 'Latest Release' }}
+          body: |
+            Build status:
+            - Tests: ${{ needs.test.result }}
+            - Android: ${{ needs.build-android.result }}
+            - iOS: ${{ needs.build-ios.result }}
+            - Linux: ${{ needs.build-linux.result }}
+            - Windows: ${{ needs.build-windows.result }}
           draft: false
           prerelease: false
         env:
@@ -276,6 +306,11 @@ jobs:
     steps:
       - name: '[Notify] Verify build status'
         run: |
+          echo "Tests:   ${{ needs.test.result }}"
+          echo "Android: ${{ needs.build-android.result }}"
+          echo "iOS:     ${{ needs.build-ios.result }}"
+          echo "Linux:   ${{ needs.build-linux.result }}"
+          echo "Windows: ${{ needs.build-windows.result }}"
           if [ "${{ needs.test.result }}" = "success" ] && \
              [ "${{ needs.build-android.result }}" = "success" ] && \
              [ "${{ needs.build-ios.result }}" = "success" ] && \
@@ -284,6 +319,6 @@ jobs:
             echo "[Notify] All tests and builds completed successfully"
             exit 0
           else
-            echo "[Notify] Some tests or builds failed"
+            echo "[Notify] One or more jobs failed (successful platforms were still released if tests passed)"
             exit 1
           fi

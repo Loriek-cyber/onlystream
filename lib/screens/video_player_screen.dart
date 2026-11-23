@@ -447,15 +447,20 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
   Future<void> _showOptionsDialog() async {
     await showModalBottomSheet<void>(
       context: context,
+      isScrollControlled: true,
       backgroundColor: AppColors.surface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
         side: BorderSide(color: AppColors.border),
       ),
       builder: (ctx) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
-          child: SingleChildScrollView(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.sizeOf(ctx).height * 0.85,
+          ),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+            child: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -620,6 +625,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
           ),
         ),
       ),
+      ),
     );
   }
 
@@ -639,47 +645,56 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
 
     await showDialog<void>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Tracce audio'),
-        content: tracks.isEmpty
-            ? const Text(
-                'Nessuna traccia audio aggiuntiva rilevata.',
-                style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
-              )
-            : SizedBox(
-                width: 340,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: tracks
-                      .map(
-                        (track) => ListTile(
-                          contentPadding: EdgeInsets.zero,
-                          title: Text(track.title),
-                          subtitle: track.language != null
-                              ? Text(
-                                  track.language!.toUpperCase(),
-                                  style: const TextStyle(
-                                    color: AppColors.textMuted,
-                                    fontSize: 12,
-                                  ),
-                                )
-                              : null,
-                          trailing: _activeAudioId == track.id
-                              ? const Icon(
-                                  Icons.check,
-                                  color: AppColors.textPrimary,
-                                )
-                              : null,
-                          onTap: () {
-                            Navigator.pop(ctx);
-                            unawaited(_player.setAudioTrack(track));
-                          },
-                        ),
-                      )
-                      .toList(),
+      builder: (ctx) {
+        final maxHeight = MediaQuery.sizeOf(ctx).height * 0.6;
+        return AlertDialog(
+          title: const Text('Tracce audio'),
+          content: tracks.isEmpty
+              ? const Text(
+                  'Nessuna traccia audio aggiuntiva rilevata.',
+                  style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
+                )
+              : ConstrainedBox(
+                  constraints: BoxConstraints(maxHeight: maxHeight),
+                  child: SizedBox(
+                    width: 340,
+                    child: Scrollbar(
+                      child: ListView.builder(
+                        shrinkWrap: true,
+                        itemCount: tracks.length,
+                        itemBuilder: (context, index) {
+                          final track = tracks[index];
+                          return ListTile(
+                            dense: true,
+                            contentPadding: EdgeInsets.zero,
+                            title: Text(track.title),
+                            subtitle: track.language != null
+                                ? Text(
+                                    track.language!.toUpperCase(),
+                                    style: const TextStyle(
+                                      color: AppColors.textMuted,
+                                      fontSize: 12,
+                                    ),
+                                  )
+                                : null,
+                            trailing: _activeAudioId == track.id
+                                ? const Icon(
+                                    Icons.check,
+                                    color: AppColors.textPrimary,
+                                  )
+                                : null,
+                            onTap: () {
+                              Navigator.pop(ctx);
+                              unawaited(_player.setAudioTrack(track));
+                            },
+                          );
+                        },
+                      ),
+                    ),
+                  ),
                 ),
-              ),
-      ),
+        );
+      },
     );
   }
 
@@ -699,50 +714,70 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
 
     await showDialog<void>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Sottotitoli'),
-        content: SizedBox(
-          width: 340,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('Disattiva'),
-                trailing: (_activeSubtitleId == null || _activeSubtitleId == 'no')
-                    ? const Icon(Icons.check, color: AppColors.textPrimary)
-                    : null,
-                onTap: () {
-                  Navigator.pop(ctx);
-                  unawaited(_player.setSubtitleTrack(null));
-                },
-              ),
-              ...tracks.map(
-                (track) => ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: Text(track.title),
-                  subtitle: track.language != null
-                      ? Text(
-                          track.language!.toUpperCase(),
-                          style: const TextStyle(
-                            color: AppColors.textMuted,
-                            fontSize: 12,
-                          ),
-                        )
-                      : null,
-                  trailing: _activeSubtitleId == track.id
-                      ? const Icon(Icons.check, color: AppColors.textPrimary)
-                      : null,
-                  onTap: () {
-                    Navigator.pop(ctx);
-                    unawaited(_player.setSubtitleTrack(track));
+      builder: (ctx) {
+        final maxHeight = MediaQuery.sizeOf(ctx).height * 0.6;
+        return AlertDialog(
+          title: const Text('Sottotitoli'),
+          content: ConstrainedBox(
+            constraints: BoxConstraints(maxHeight: maxHeight),
+            child: SizedBox(
+              width: 340,
+              child: Scrollbar(
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: tracks.length + 1,
+                  itemBuilder: (context, index) {
+                    if (index == 0) {
+                      return ListTile(
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text('Disattiva'),
+                        trailing:
+                            (_activeSubtitleId == null ||
+                                _activeSubtitleId == 'no')
+                            ? const Icon(
+                                Icons.check,
+                                color: AppColors.textPrimary,
+                              )
+                            : null,
+                        onTap: () {
+                          Navigator.pop(ctx);
+                          unawaited(_player.setSubtitleTrack(null));
+                        },
+                      );
+                    }
+                    final track = tracks[index - 1];
+                    return ListTile(
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                      title: Text(track.title),
+                      subtitle: track.language != null
+                          ? Text(
+                              track.language!.toUpperCase(),
+                              style: const TextStyle(
+                                color: AppColors.textMuted,
+                                fontSize: 12,
+                              ),
+                            )
+                          : null,
+                      trailing: _activeSubtitleId == track.id
+                          ? const Icon(
+                              Icons.check,
+                              color: AppColors.textPrimary,
+                            )
+                          : null,
+                      onTap: () {
+                        Navigator.pop(ctx);
+                        unawaited(_player.setSubtitleTrack(track));
+                      },
+                    );
                   },
                 ),
               ),
-            ],
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 

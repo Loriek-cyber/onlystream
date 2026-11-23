@@ -985,4 +985,76 @@ void main() {
     expect(config.quality, '1080p');
     expect(config.serverMode, 'remote');
   });
+
+  testWidgets(
+    'VideoPlayerScreen audio and subtitle dialogs scroll cleanly in landscape',
+    (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(800, 360);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final harness = _TestHarness();
+      await harness.init();
+
+      final fakePlayer = FakePlayerAdapter();
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.darkTheme,
+          home: VideoPlayerScreen(
+            media: const MediaSummary(
+              id: 1396,
+              kind: MediaKind.tv,
+              isAnime: false,
+              title: 'Breaking Bad',
+            ),
+            apiClient: harness.api,
+            configService: harness.config,
+            libraryService: harness.library,
+            torrentGuard: harness.torrentGuard,
+            playerFactory: () => fakePlayer,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final manyAudio = List.generate(
+        25,
+        (i) => PlayerTrackItem(id: 'a$i', title: 'Audio Track $i', language: 'it'),
+      );
+      final manySubs = List.generate(
+        25,
+        (i) => PlayerTrackItem(id: 's$i', title: 'Subtitle Track $i', language: 'it'),
+      );
+      fakePlayer.audioTracksCtrl.add(manyAudio);
+      fakePlayer.subtitleTracksCtrl.add(manySubs);
+      await tester.pump();
+
+      // Open Audio dialog & scroll to bottom track
+      await tester.tap(find.byTooltip('Audio'));
+      await tester.pumpAndSettle();
+      expect(find.text('Tracce audio'), findsOneWidget);
+      await tester.scrollUntilVisible(
+        find.text('Audio Track 24'),
+        200,
+        scrollable: find.byType(Scrollable).last,
+      );
+      await tester.tap(find.text('Audio Track 24'));
+      await tester.pumpAndSettle();
+      expect(fakePlayer.selectedAudioTracks.last.id, 'a24');
+
+      // Open Subtitles dialog & scroll to bottom track
+      await tester.tap(find.byTooltip('Sottotitoli'));
+      await tester.pumpAndSettle();
+      expect(find.text('Sottotitoli'), findsOneWidget);
+      await tester.scrollUntilVisible(
+        find.text('Subtitle Track 24'),
+        200,
+        scrollable: find.byType(Scrollable).last,
+      );
+      await tester.tap(find.text('Subtitle Track 24'));
+      await tester.pumpAndSettle();
+      expect(fakePlayer.selectedSubtitleTracks.last?.id, 's24');
+    },
+  );
 }

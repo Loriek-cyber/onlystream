@@ -18,6 +18,17 @@ OnlyStream connects to an **EasyStream API** (`v1.0.0`) server for metadata, str
   flutter build apk --release --dart-define=API_URL="http://192.168.1.100:5555"
   ```
 
+### 3. Building Your Own Compatible Backend
+OnlyStream is decoupled from any specific backend implementation. To write your own compatible backend service (in Rust, Go, Python, Node.js, etc.) or an Android companion server, see the full HTTP & Companion specification in [**`docs/BACKEND_API.md`**](docs/BACKEND_API.md).
+
+Summary of required endpoints:
+- `GET /health`
+- `GET /search`, `GET /discover`, `GET /genres`
+- `GET /media/{kind}/{id}`, `GET /media/tv/{id}/season/{season}`
+- `GET /stream/resolve/{kind}/{id}`, `GET /stream/hls/{kind}/{id}`, `GET /stream/torrent/{info_hash}`
+- `GET/DELETE /torrents`, `GET/DELETE /torrents/{info_hash}`
+- `GET /library`, `GET /library/updates`, `PUT/DELETE /library/{kind}/{id}`, `POST /library/{kind}/{id}/progress`, `POST /library/{kind}/{id}/watched`
+
 ## Installing via Obtainium (Android)
 
 You can receive release updates directly via [Obtainium](https://github.com/ImranR98/Obtainium):
@@ -45,7 +56,7 @@ Local `flutter build apk --release` builds automatically fall back to the Androi
 
 ## GitHub Actions CI/CD & Release Secrets Checklist
 
-The workflow in [`.github/workflows/flutter_build.yml`](.github/workflows/flutter_build.yml) runs `flutter analyze` and `flutter test` first, then builds Android, iOS, Linux, and Windows artifacts. Tagged releases (`v*`) and `workflow_dispatch` runs publish a GitHub Release.
+The workflow in [`.github/workflows/flutter_build.yml`](.github/workflows/flutter_build.yml) runs `flutter analyze` and `flutter test` first, then builds Android, iOS, Linux, and Windows artifacts in parallel. Tagged releases (`v*`) and `workflow_dispatch` runs publish all successful platform artifacts to a GitHub Release even if another platform build fails (as long as the `test` job passes).
 
 Configure the following in **Repository Settings -> Secrets and variables -> Actions**:
 
