@@ -10,39 +10,91 @@ on:
   workflow_dispatch:
 
 jobs:
+  test:
+    name: '[Test] Analyze & Test'
+    runs-on: ubuntu-latest
+    steps:
+      - name: '[Test] Checkout code'
+        uses: actions/checkout@v4
+
+      - name: '[Test] Setup Flutter'
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: '[Test] Get dependencies'
+        run: flutter pub get
+
+      - name: '[Test] Analyze'
+        run: flutter analyze
+
+      - name: '[Test] Run tests'
+        run: flutter test
+
   build-android:
     name: '[Android] Build'
+    needs: test
     runs-on: ubuntu-latest
     steps:
       - name: '[Android] Checkout code'
         uses: actions/checkout@v4
-      
+
       - name: '[Android] Setup Java'
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: '17'
-      
+
       - name: '[Android] Setup Flutter'
         uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
           cache: true
-      
+
       - name: '[Android] Get dependencies'
         run: flutter pub get
-      
-      - name: '[Android] Build APK'
-        run: flutter build apk --release --dart-define=API_URL="${{ vars.API_URL }}"
-      
-      - name: '[Android] Build AAB'
-        run: flutter build appbundle --release --dart-define=API_URL="${{ vars.API_URL }}"
-      
-      - name: '[Android] Package artifacts'
+
+      - name: '[Android] Configure release signing'
+        env:
+          ANDROID_KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+          ANDROID_KEYSTORE_PASS: ${{ secrets.ANDROID_KEYSTORE_PASS }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASS: ${{ secrets.ANDROID_KEY_PASS }}
         run: |
+          if [ -n "$ANDROID_KEYSTORE_B64" ]; then
+            KEYSTORE_FILE="${{ runner.temp }}/onlystream-release.jks"
+            printf '%s' "$ANDROID_KEYSTORE_B64" | tr -d '\r\n ' | base64 --decode > "$KEYSTORE_FILE"
+            printf 'ANDROID_KEYSTORE_PATH=%s\n' "$KEYSTORE_FILE" >> "$GITHUB_ENV"
+            printf 'ANDROID_KEYSTORE_PASS=%s\n' "$ANDROID_KEYSTORE_PASS" >> "$GITHUB_ENV"
+            printf 'ANDROID_KEY_ALIAS=%s\n' "$ANDROID_KEY_ALIAS" >> "$GITHUB_ENV"
+            printf 'ANDROID_KEY_PASS=%s\n' "$ANDROID_KEY_PASS" >> "$GITHUB_ENV"
+            echo "Configured Android release signing keystore."
+          else
+            echo "ANDROID_KEYSTORE_B64 not set; release build will fall back to debug signing."
+          fi
+
+      - name: '[Android] Build & Package APKs'
+        env:
+          API_URL: ${{ vars.API_URL }}
+        run: |
+          DART_DEFINES=()
+          if [ -n "$API_URL" ]; then
+            DART_DEFINES+=(--dart-define=API_URL="$API_URL")
+          fi
+
           mkdir -p release-files
-          cp build/app/outputs/flutter-apk/app-release.apk release-files/onlystream-android.apk
-          cp build/app/outputs/bundle/release/app-release.aab release-files/onlystream-android.aab
+          flutter build apk --release --split-per-abi "${DART_DEFINES[@]}"
+          cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk release-files/onlystream-arm64-v8a.apk
+          cp build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk release-files/onlystream-armeabi-v7a.apk
+          cp build/app/outputs/flutter-apk/app-x86_64-release.apk release-files/onlystream-x86_64.apk
+
+          flutter build apk --release "${DART_DEFINES[@]}"
+          cp build/app/outputs/flutter-apk/app-release.apk release-files/onlystream-universal.apk
+
+      - name: '[Android] Cleanup temporary keystore'
+        if: always()
+        run: rm -f "${{ runner.temp }}/onlystream-release.jks"
 
       - name: '[Android] Upload artifacts'
         uses: actions/upload-artifact@v4
@@ -52,23 +104,31 @@ jobs:
 
   build-ios:
     name: '[iOS] Build'
+    needs: test
     runs-on: macos-latest
     steps:
       - name: '[iOS] Checkout code'
         uses: actions/checkout@v4
-      
+
       - name: '[iOS] Setup Flutter'
         uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
           cache: true
-      
+
       - name: '[iOS] Get dependencies'
         run: flutter pub get
-      
+
       - name: '[iOS] Build iOS'
-        run: flutter build ios --release --no-codesign --dart-define=API_URL="${{ vars.API_URL }}"
-      
+        env:
+          API_URL: ${{ vars.API_URL }}
+        run: |
+          if [ -n "$API_URL" ]; then
+            flutter build ios --release --no-codesign --dart-define=API_URL="$API_URL"
+          else
+            flutter build ios --release --no-codesign
+          fi
+
       - name: '[iOS] Package artifact'
         run: |
           mkdir -p release-files
@@ -83,11 +143,12 @@ jobs:
 
   build-linux:
     name: '[Linux] Build'
+    needs: test
     runs-on: ubuntu-latest
     steps:
       - name: '[Linux] Checkout code'
         uses: actions/checkout@v4
-      
+
       - name: '[Linux] Setup dependencies'
         run: |
           sudo apt-get update
@@ -101,22 +162,29 @@ jobs:
             libunwind-dev \
             git \
             curl
-      
+
       - name: '[Linux] Setup Flutter'
         uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
           cache: true
-      
+
       - name: '[Linux] Enable Linux desktop'
         run: flutter config --enable-linux-desktop
-      
+
       - name: '[Linux] Get dependencies'
         run: flutter pub get
-      
+
       - name: '[Linux] Build Linux'
-        run: flutter build linux --release --dart-define=API_URL="${{ vars.API_URL }}"
-      
+        env:
+          API_URL: ${{ vars.API_URL }}
+        run: |
+          if [ -n "$API_URL" ]; then
+            flutter build linux --release --dart-define=API_URL="$API_URL"
+          else
+            flutter build linux --release
+          fi
+
       - name: '[Linux] Package artifact'
         run: |
           mkdir -p release-files
@@ -130,29 +198,37 @@ jobs:
 
   build-windows:
     name: '[Windows] Build'
+    needs: test
     runs-on: windows-latest
     steps:
       - name: '[Windows] Checkout code'
         uses: actions/checkout@v4
-      
+
       - name: '[Windows] Setup Visual Studio'
         uses: microsoft/setup-msbuild@v1
-      
+
       - name: '[Windows] Setup Flutter'
         uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
           cache: true
-      
+
       - name: '[Windows] Enable Windows desktop'
         run: flutter config --enable-windows-desktop
-      
+
       - name: '[Windows] Get dependencies'
         run: flutter pub get
-      
+
       - name: '[Windows] Build Windows'
-        run: flutter build windows --release --dart-define=API_URL="${{ vars.API_URL }}"
-      
+        env:
+          API_URL: ${{ vars.API_URL }}
+        run: |
+          if ($env:API_URL) {
+            flutter build windows --release --dart-define=API_URL="$env:API_URL"
+          } else {
+            flutter build windows --release
+          }
+
       - name: '[Windows] Package artifact'
         run: |
           mkdir release-files
@@ -166,9 +242,9 @@ jobs:
 
   release:
     name: '[Release] Create Release'
-    needs: [build-android, build-ios, build-linux, build-windows]
+    needs: [test, build-android, build-ios, build-linux, build-windows]
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     permissions:
       contents: write
     steps:
@@ -183,7 +259,6 @@ jobs:
         with:
           files: |
             release-artifacts/*.apk
-            release-artifacts/*.aab
             release-artifacts/*.tar.gz
             release-artifacts/*.zip
           tag_name: ${{ github.ref_type == 'tag' && github.ref_name || 'latest' }}
@@ -196,18 +271,19 @@ jobs:
   notify:
     name: '[Notify] Check Status'
     runs-on: ubuntu-latest
-    needs: [build-android, build-ios, build-linux, build-windows]
+    needs: [test, build-android, build-ios, build-linux, build-windows]
     if: always()
     steps:
       - name: '[Notify] Verify build status'
         run: |
-          if [ "${{ needs.build-android.result }}" = "success" ] && \
+          if [ "${{ needs.test.result }}" = "success" ] && \
+             [ "${{ needs.build-android.result }}" = "success" ] && \
              [ "${{ needs.build-ios.result }}" = "success" ] && \
              [ "${{ needs.build-linux.result }}" = "success" ] && \
              [ "${{ needs.build-windows.result }}" = "success" ]; then
-            echo "[Notify] All builds completed successfully"
+            echo "[Notify] All tests and builds completed successfully"
             exit 0
           else
-            echo "[Notify] Some builds failed"
+            echo "[Notify] Some tests or builds failed"
             exit 1
           fi

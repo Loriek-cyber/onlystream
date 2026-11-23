@@ -1,0 +1,16 @@
+{
+  "apps": [
+    {
+      "id": "com.loriek.onlystream",
+      "url": "https://github.com/Loriek-cyber/onlystream",
+      "author": "Loriek-cyber",
+      "name": "OnlyStream",
+      "preferredApkIndex": 0,
+      "additionalSettings": "{\"includePrereleases\":false,\"fallbackToOlderReleases\":true,\"filterReleaseTitlesByRegEx\":\"\",\"filterReleaseNotesByRegEx\":\"\",\"verifyLatestTag\":false,\"dontSortReleasesList\":false,\"useLatestAssetDateAsReleaseDate\":false,\"trackOnly\":false,\"versionExtractionRegEx\":\"\",\"matchGroupToUse\":\"\",\"versionDetection\":true,\"releaseDateAsVersion\":false,\"useVersionCodeAsOSVersion\":false,\"apkFilterRegEx\":\"onlystream-arm64-v8a\\\\.apk\",\"invertAPKFilter\":false,\"autoApkFilterByArch\":false,\"shizukuPretendToBeGooglePlay\":false,\"exemptFromBackgroundUpdates\":false,\"skipUpdateNotifications\":false}",
+      "categories": [
+        "Multimedia"
+      ],
+      "overrideSource": "GitHub"
+    }
+  ]
+}

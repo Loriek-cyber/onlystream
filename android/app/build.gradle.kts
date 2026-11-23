@@ -5,7 +5,7 @@ plugins {
 }
 
 android {
-    namespace = "com.example.onlystream"
+    namespace = "com.loriek.onlystream"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -15,11 +15,8 @@ android {
     }
 
     defaultConfig {
-        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "com.example.onlystream"
-        // You can update the following values to match your application needs.
-        // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = flutter.minSdkVersion
+        applicationId = "com.loriek.onlystream"
+        minSdk = maxOf(flutter.minSdkVersion, 23)
         targetSdk = flutter.targetSdkVersion
         // Uses the version code from pubspec.yaml. When using split APKs, 1000 * ABI_VERSION
         // is added automatically by Flutter. (https://developer.android.com/studio/build/configure-apk-splits#configure-APK-versions)
@@ -29,11 +26,26 @@ android {
         versionName = flutter.versionName
     }
 
+    val keystorePath = System.getenv("ANDROID_KEYSTORE_PATH")?.takeIf { it.isNotBlank() }
+    val keystorePass = System.getenv("ANDROID_KEYSTORE_PASS")?.takeIf { it.isNotBlank() }
+    val keystoreAlias = System.getenv("ANDROID_KEY_ALIAS")?.takeIf { it.isNotBlank() }
+    val keystoreKeyPass = System.getenv("ANDROID_KEY_PASS")?.takeIf { it.isNotBlank() } ?: keystorePass
+    val keystoreFile = keystorePath?.let { file(it) }?.takeIf { it.exists() }
+
+    signingConfigs {
+        if (keystoreFile != null && keystorePass != null && keystoreAlias != null && keystoreKeyPass != null) {
+            create("release") {
+                storeFile = keystoreFile
+                storePassword = keystorePass
+                keyAlias = keystoreAlias
+                keyPassword = keystoreKeyPass
+            }
+        }
+    }
+
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
         }
     }
 }
