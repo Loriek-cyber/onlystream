@@ -144,6 +144,35 @@ class ApiClient {
     }
   }
 
+  Future<ProviderSourcesConfig> getProviderSources() async {
+    final decoded = await _getJson(_uri('/config/sources'));
+    if (decoded is! Map<String, dynamic>) {
+      throw const ApiException(500, 'Risposta configurazione sorgenti non valida');
+    }
+    return ProviderSourcesConfig.fromJson(decoded);
+  }
+
+  Future<ProviderSourcesConfig> updateProviderSources(
+    Map<String, String> patch,
+  ) async {
+    final decoded = await _sendJson('PUT', _uri('/config/sources'), patch);
+    if (decoded is! Map<String, dynamic>) {
+      throw const ApiException(500, 'Risposta configurazione sorgenti non valida');
+    }
+    return ProviderSourcesConfig.fromJson(decoded);
+  }
+
+  Future<ProviderSourcesConfig> resetProviderSources() async {
+    final response = await _client
+        .delete(_uri('/config/sources'))
+        .timeout(_defaultTimeout);
+    final decoded = _decodeResponse(response);
+    if (decoded is! Map<String, dynamic>) {
+      throw const ApiException(500, 'Risposta configurazione sorgenti non valida');
+    }
+    return ProviderSourcesConfig.fromJson(decoded);
+  }
+
   Future<List<MediaSummary>> search(
     String query, {
     String type = 'all',

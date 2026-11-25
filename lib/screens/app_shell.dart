@@ -66,7 +66,8 @@ class _AppShellState extends State<AppShell> {
   void _openSettings() {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => SettingsScreen(configService: _config),
+        builder: (_) =>
+            SettingsScreen(configService: _config, apiClient: _apiClient),
       ),
     );
   }

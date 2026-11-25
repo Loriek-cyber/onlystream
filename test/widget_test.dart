@@ -1057,4 +1057,77 @@ void main() {
       expect(fakePlayer.selectedSubtitleTracks.last?.id, 's24');
     },
   );
+
+  testWidgets('SettingsScreen loads and updates custom provider base URLs', (
+    WidgetTester tester,
+  ) async {
+    Map<String, dynamic>? savedPatch;
+    final mockClient = MockClient((req) async {
+      if (req.url.path == '/config/sources' && req.method == 'GET') {
+        return http.Response(
+          json.encode({
+            'sources': {
+              'vixsrc_url': 'https://vixsrc.to',
+              'animeunity_url': 'https://animeunity.cx',
+              'animeworld_url': 'https://www.animeworld.ac',
+              'corsaro_url': 'https://icv.stremio-italia.eu',
+              'torrentio_url': 'https://torrentio.strem.fun',
+            },
+            'defaults': {
+              'vixsrc_url': 'https://vixsrc.to',
+              'animeunity_url': 'https://animeunity.cx',
+              'animeworld_url': 'https://www.animeworld.ac',
+              'corsaro_url': 'https://icv.stremio-italia.eu',
+              'torrentio_url': 'https://torrentio.strem.fun',
+            },
+          }),
+          200,
+        );
+      }
+      if (req.url.path == '/config/sources' && req.method == 'PUT') {
+        savedPatch = json.decode(req.body) as Map<String, dynamic>;
+        return http.Response(
+          json.encode({
+            'sources': savedPatch,
+            'defaults': {
+              'vixsrc_url': 'https://vixsrc.to',
+              'animeunity_url': 'https://animeunity.cx',
+              'animeworld_url': 'https://www.animeworld.ac',
+              'corsaro_url': 'https://icv.stremio-italia.eu',
+              'torrentio_url': 'https://torrentio.strem.fun',
+            },
+          }),
+          200,
+        );
+      }
+      return http.Response('{}', 200);
+    });
+
+    final config = ConfigService(httpClient: mockClient, persist: false);
+    await config.init(checkHealthOnInit: false);
+    final api = ApiClient(config: config, httpClient: mockClient);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.darkTheme,
+        home: SettingsScreen(configService: config, apiClient: api),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.scrollUntilVisible(
+      find.text('Salva link'),
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.enterText(
+      find.widgetWithText(TextField, 'VixSrc'),
+      'https://vixsrc.custom.example',
+    );
+    await tester.tap(find.text('Salva link'));
+    await tester.pumpAndSettle();
+
+    expect(savedPatch?['vixsrc_url'], 'https://vixsrc.custom.example');
+    expect(find.text('Link base salvati sul server'), findsOneWidget);
+  });
 }

@@ -17,7 +17,7 @@ This document describes the complete HTTP and Android companion contract require
 
 ---
 
-## 1. Health
+## 1. Health & Runtime Provider URLs
 
 ### `GET /health`
 Used by OnlyStream to verify server connectivity and measure latency.
@@ -30,6 +30,46 @@ Used by OnlyStream to verify server connectivity and measure latency.
   "version": "1.0.0"
 }
 ```
+
+### `GET /config/sources`
+Returns the active upstream provider base URLs and their startup/environment defaults.
+
+**Response `200 OK`:**
+```json
+{
+  "sources": {
+    "vixsrc_url": "https://vixsrc.to",
+    "animeunity_url": "https://animeunity.cx",
+    "animeworld_url": "https://www.animeworld.ac",
+    "corsaro_url": "https://icv.stremio-italia.eu",
+    "torrentio_url": "https://torrentio.strem.fun"
+  },
+  "defaults": {
+    "vixsrc_url": "https://vixsrc.to",
+    "animeunity_url": "https://animeunity.cx",
+    "animeworld_url": "https://www.animeworld.ac",
+    "corsaro_url": "https://icv.stremio-italia.eu",
+    "torrentio_url": "https://torrentio.strem.fun"
+  }
+}
+```
+
+### `PUT /config/sources`
+Updates one or more upstream provider base URLs at runtime, clears affected provider caches, and persists overrides (e.g. `data_dir/sources.json`). Passing an empty string `""` for a field resets that field to its default. Non-`http://`/`https://` URLs return `400 Bad Request`.
+
+**Request Body (partial):**
+```json
+{
+  "vixsrc_url": "https://vixsrc.custom.example",
+  "animeunity_url": "https://animeunity.so"
+}
+```
+**Response `200 OK`:** same shape as `GET /config/sources`.
+
+### `DELETE /config/sources`
+Resets all provider base URLs back to defaults/environment values.
+
+**Response `200 OK`:** same shape as `GET /config/sources`.
 
 ---
 

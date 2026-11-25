@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:onlystream/services/api_client.dart';
 import 'package:onlystream/services/config_service.dart';
 import 'package:onlystream/theme/app_theme.dart';
 
 class SettingsScreen extends StatefulWidget {
   final ConfigService? configService;
+  final ApiClient? apiClient;
 
-  const SettingsScreen({super.key, this.configService});
+  const SettingsScreen({super.key, this.configService, this.apiClient});
 
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
@@ -13,17 +15,30 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   late final ConfigService _config;
+  late final ApiClient _apiClient;
   late final TextEditingController _urlController;
+  final TextEditingController _vixsrcController = TextEditingController();
+  final TextEditingController _animeunityController = TextEditingController();
+  final TextEditingController _animeworldController = TextEditingController();
+  final TextEditingController _corsaroController = TextEditingController();
+  final TextEditingController _torrentioController = TextEditingController();
+
   bool _companionBusy = false;
+  bool _sourcesLoading = false;
+  bool _sourcesSaving = false;
+  ProviderSourcesConfig? _sourcesConfig;
+  String? _sourcesMessage;
   String? _feedbackMessage;
 
   @override
   void initState() {
     super.initState();
     _config = widget.configService ?? ConfigService.instance;
+    _apiClient = widget.apiClient ?? ApiClient(config: _config);
     _urlController = TextEditingController(text: _config.remoteUrl);
     _config.addListener(_onConfigChanged);
     _config.refreshCompanionStatus();
+    _loadProviderSources();
   }
 
   void _onConfigChanged() {
@@ -39,7 +54,96 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void dispose() {
     _config.removeListener(_onConfigChanged);
     _urlController.dispose();
+    _vixsrcController.dispose();
+    _animeunityController.dispose();
+    _animeworldController.dispose();
+    _corsaroController.dispose();
+    _torrentioController.dispose();
     super.dispose();
+  }
+
+  void _syncSourceControllers(ProviderUrls urls) {
+    _vixsrcController.text = urls.vixsrcUrl;
+    _animeunityController.text = urls.animeunityUrl;
+    _animeworldController.text = urls.animeworldUrl;
+    _corsaroController.text = urls.corsaroUrl;
+    _torrentioController.text = urls.torrentioUrl;
+  }
+
+  Future<void> _loadProviderSources() async {
+    setState(() {
+      _sourcesLoading = true;
+      _sourcesMessage = null;
+    });
+    try {
+      final cfg = await _apiClient.getProviderSources();
+      if (!mounted) return;
+      _syncSourceControllers(cfg.sources);
+      setState(() {
+        _sourcesConfig = cfg;
+        _sourcesLoading = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _sourcesLoading = false;
+        _sourcesMessage = 'Connetti il server per modificare i link base.';
+      });
+    }
+  }
+
+  Future<void> _saveProviderSources() async {
+    FocusScope.of(context).unfocus();
+    setState(() {
+      _sourcesSaving = true;
+      _sourcesMessage = null;
+    });
+    try {
+      final updated = await _apiClient.updateProviderSources({
+        'vixsrc_url': _vixsrcController.text.trim(),
+        'animeunity_url': _animeunityController.text.trim(),
+        'animeworld_url': _animeworldController.text.trim(),
+        'corsaro_url': _corsaroController.text.trim(),
+        'torrentio_url': _torrentioController.text.trim(),
+      });
+      if (!mounted) return;
+      _syncSourceControllers(updated.sources);
+      setState(() {
+        _sourcesConfig = updated;
+        _sourcesSaving = false;
+        _sourcesMessage = 'Link base salvati sul server';
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _sourcesSaving = false;
+        _sourcesMessage = 'Errore salvataggio: $e';
+      });
+    }
+  }
+
+  Future<void> _resetProviderSources() async {
+    FocusScope.of(context).unfocus();
+    setState(() {
+      _sourcesSaving = true;
+      _sourcesMessage = null;
+    });
+    try {
+      final reset = await _apiClient.resetProviderSources();
+      if (!mounted) return;
+      _syncSourceControllers(reset.sources);
+      setState(() {
+        _sourcesConfig = reset;
+        _sourcesSaving = false;
+        _sourcesMessage = 'Link base ripristinati ai predefiniti';
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _sourcesSaving = false;
+        _sourcesMessage = 'Errore ripristino: $e';
+      });
+    }
   }
 
   Future<void> _saveRemoteUrl() async {
@@ -483,10 +587,132 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                 ],
               ),
+              const SizedBox(height: 28),
+              const _SectionHeader(title: 'Link base sorgenti'),
+              const SizedBox(height: 10),
+              _SettingsGroupCard(
+                children: [
+                  Row(
+                    children: [
+                      const Expanded(
+                        child: Text(
+                          'Domini personalizzati usati dal server API (lascia vuoto per il predefinito).',
+                          style: TextStyle(
+                            color: AppColors.textSecondary,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: 'Ricarica link base',
+                        onPressed: _sourcesLoading || _sourcesSaving
+                            ? null
+                            : _loadProviderSources,
+                        icon: const Icon(
+                          Icons.refresh,
+                          size: 18,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (_sourcesLoading)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 12),
+                      child: LinearProgressIndicator(
+                        color: AppColors.textPrimary,
+                        backgroundColor: AppColors.surfaceElevated,
+                      ),
+                    ),
+                  const SizedBox(height: 8),
+                  _SourceUrlField(
+                    label: 'VixSrc',
+                    hint: _sourcesConfig?.defaults.vixsrcUrl ?? 'https://vixsrc.to',
+                    controller: _vixsrcController,
+                  ),
+                  const SizedBox(height: 10),
+                  _SourceUrlField(
+                    label: 'AnimeUnity',
+                    hint: _sourcesConfig?.defaults.animeunityUrl ?? 'https://animeunity.cx',
+                    controller: _animeunityController,
+                  ),
+                  const SizedBox(height: 10),
+                  _SourceUrlField(
+                    label: 'AnimeWorld',
+                    hint: _sourcesConfig?.defaults.animeworldUrl ?? 'https://www.animeworld.ac',
+                    controller: _animeworldController,
+                  ),
+                  const SizedBox(height: 10),
+                  _SourceUrlField(
+                    label: 'IlCorsaroViola',
+                    hint: _sourcesConfig?.defaults.corsaroUrl ?? 'https://icv.stremio-italia.eu',
+                    controller: _corsaroController,
+                  ),
+                  const SizedBox(height: 10),
+                  _SourceUrlField(
+                    label: 'Torrentio',
+                    hint: _sourcesConfig?.defaults.torrentioUrl ?? 'https://torrentio.strem.fun',
+                    controller: _torrentioController,
+                  ),
+                  if (_sourcesMessage != null) ...[
+                    const SizedBox(height: 10),
+                    Text(
+                      _sourcesMessage!,
+                      style: const TextStyle(
+                        color: AppColors.textSecondary,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 14),
+                  Wrap(
+                    spacing: 10,
+                    runSpacing: 8,
+                    children: [
+                      FilledButton(
+                        onPressed: _sourcesSaving ? null : _saveProviderSources,
+                        child: Text(
+                          _sourcesSaving ? 'Salvataggio...' : 'Salva link',
+                        ),
+                      ),
+                      OutlinedButton(
+                        onPressed: _sourcesSaving ? null : _resetProviderSources,
+                        child: const Text('Ripristina predefiniti'),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
               const SizedBox(height: 32),
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _SourceUrlField extends StatelessWidget {
+  final String label;
+  final String hint;
+  final TextEditingController controller;
+
+  const _SourceUrlField({
+    required this.label,
+    required this.hint,
+    required this.controller,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return TextField(
+      controller: controller,
+      keyboardType: TextInputType.url,
+      style: const TextStyle(color: AppColors.textPrimary, fontSize: 13),
+      decoration: InputDecoration(
+        labelText: label,
+        hintText: hint,
+        isDense: true,
       ),
     );
   }
