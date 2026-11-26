@@ -55,6 +55,18 @@ class Win32Window {
   // Return a RECT representing the bounds of the current client area.
   RECT GetClientArea();
 
+  bool IsMaximized() const;
+  bool IsFullscreen() const;
+  bool IsFocused() const;
+
+  void MinimizeWindow();
+  void MaximizeWindow();
+  void UnmaximizeWindow();
+  void SetFullscreen(bool fullscreen);
+  void CloseWindow();
+  void StartDragging();
+  void StartResizing(int hit_test);
+
  protected:
   // Processes and route salient window messages for mouse handling,
   // size change and DPI. Delegates handling of these to member overloads that
@@ -70,6 +82,9 @@ class Win32Window {
 
   // Called when Destroy is called.
   virtual void OnDestroy();
+
+  // Called when maximize, fullscreen, or focus state changes.
+  virtual void OnWindowStateChanged();
 
  private:
   friend class WindowClassRegistrar;
@@ -91,6 +106,11 @@ class Win32Window {
   static void UpdateTheme(HWND const window);
 
   bool quit_on_close_ = false;
+  bool is_maximized_ = false;
+  bool is_fullscreen_ = false;
+  bool is_focused_ = true;
+  WINDOWPLACEMENT saved_placement_{sizeof(WINDOWPLACEMENT)};
+  DWORD saved_style_ = WS_OVERLAPPEDWINDOW;
 
   // window handle for top level window.
   HWND window_handle_ = nullptr;

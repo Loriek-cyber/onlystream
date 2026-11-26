@@ -1,0 +1,49 @@
+%global debug_package %{nil}
+%global _build_id_links none
+
+Name:           onlystream
+Version:        @VERSION@
+Release:        @RELEASE@%{?dist}
+Summary:        Minimal cross-platform streaming client for movies, TV shows, and anime
+License:        MIT
+URL:            https://github.com/Loriek-cyber/onlystream
+BuildArch:      x86_64
+AutoReqProv:    no
+
+Requires:       libgtk-3.so.0()(64bit)
+Requires:       libepoxy.so.0()(64bit)
+Requires:       (libmpv.so.2()(64bit) or libmpv.so.1()(64bit))
+
+%description
+Minimal cross-platform Flutter streaming client for movies, TV shows, and
+anime, powered by media_kit and the EasyStream API backend.
+
+%prep
+# Prebuilt bundle staged externally
+
+%build
+# Nothing to compile inside rpmbuild
+
+%install
+rm -rf %{buildroot}
+mkdir -p %{buildroot}
+cp -a @STAGEDIR@/. %{buildroot}/
+
+%files
+%defattr(-,root,root,-)
+/opt/onlystream
+/usr/bin/onlystream
+/usr/share/applications/onlystream.desktop
+/usr/share/metainfo/com.loriek.onlystream.metainfo.xml
+/usr/share/icons/hicolor/128x128/apps/onlystream.png
+/usr/share/icons/hicolor/256x256/apps/onlystream.png
+/usr/share/icons/hicolor/512x512/apps/onlystream.png
+/usr/share/pixmaps/onlystream.png
+
+%post
+/usr/bin/update-desktop-database /usr/share/applications >/dev/null 2>&1 || :
+/usr/bin/gtk-update-icon-cache -f -t /usr/share/icons/hicolor >/dev/null 2>&1 || :
+
+%postun
+/usr/bin/update-desktop-database /usr/share/applications >/dev/null 2>&1 || :
+/usr/bin/gtk-update-icon-cache -f -t /usr/share/icons/hicolor >/dev/null 2>&1 || :

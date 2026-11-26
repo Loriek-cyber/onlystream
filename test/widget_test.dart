@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -15,10 +16,12 @@ import 'package:onlystream/screens/settings_screen.dart';
 import 'package:onlystream/screens/video_player_screen.dart';
 import 'package:onlystream/services/api_client.dart';
 import 'package:onlystream/services/config_service.dart';
+import 'package:onlystream/services/desktop_window_controller.dart';
 import 'package:onlystream/services/library_service.dart';
 import 'package:onlystream/services/player_adapter.dart';
 import 'package:onlystream/services/torrent_session_guard.dart';
 import 'package:onlystream/theme/app_theme.dart';
+import 'package:onlystream/widgets/desktop_window_frame.dart';
 
 class FakeOpenCall {
   final String url;
@@ -33,6 +36,9 @@ class FakePlayerAdapter implements PlayerAdapter {
   final bufferingCtrl = StreamController<bool>.broadcast();
   final positionCtrl = StreamController<Duration>.broadcast();
   final durationCtrl = StreamController<Duration>.broadcast();
+  final bufferCtrl = StreamController<Duration>.broadcast();
+  final volumeCtrl = StreamController<double>.broadcast();
+  final rateCtrl = StreamController<double>.broadcast();
   final completedCtrl = StreamController<bool>.broadcast();
   final audioTracksCtrl = StreamController<List<PlayerTrackItem>>.broadcast();
   final subtitleTracksCtrl =
@@ -44,6 +50,9 @@ class FakePlayerAdapter implements PlayerAdapter {
   final List<FakeOpenCall> openCalls = [];
   final List<PlayerTrackItem> selectedAudioTracks = [];
   final List<PlayerTrackItem?> selectedSubtitleTracks = [];
+  final List<double> setVolumes = [];
+  final List<double> setRates = [];
+  final List<Duration> seeks = [];
   bool disposed = false;
   bool paused = false;
   BoxFit lastFit = BoxFit.contain;
@@ -56,6 +65,12 @@ class FakePlayerAdapter implements PlayerAdapter {
   Stream<Duration> get positionStream => positionCtrl.stream;
   @override
   Stream<Duration> get durationStream => durationCtrl.stream;
+  @override
+  Stream<Duration> get bufferStream => bufferCtrl.stream;
+  @override
+  Stream<double> get volumeStream => volumeCtrl.stream;
+  @override
+  Stream<double> get rateStream => rateCtrl.stream;
   @override
   Stream<bool> get completedStream => completedCtrl.stream;
   @override
@@ -77,6 +92,7 @@ class FakePlayerAdapter implements PlayerAdapter {
     Duration start = Duration.zero,
   }) async {
     openCalls.add(FakeOpenCall(url, httpHeaders, start));
+    paused = false;
     playingCtrl.add(true);
     durationCtrl.add(const Duration(minutes: 45));
     positionCtrl.add(start);
@@ -96,7 +112,22 @@ class FakePlayerAdapter implements PlayerAdapter {
 
   @override
   Future<void> seek(Duration position) async {
+    seeks.add(position);
     positionCtrl.add(position);
+  }
+
+  @override
+  Future<void> setVolume(double volume) async {
+    final clamped = volume.clamp(0.0, 100.0);
+    setVolumes.add(clamped);
+    volumeCtrl.add(clamped);
+  }
+
+  @override
+  Future<void> setRate(double rate) async {
+    final clamped = rate.clamp(0.25, 4.0);
+    setRates.add(clamped);
+    rateCtrl.add(clamped);
   }
 
   @override
@@ -128,6 +159,9 @@ class FakePlayerAdapter implements PlayerAdapter {
       bufferingCtrl.close(),
       positionCtrl.close(),
       durationCtrl.close(),
+      bufferCtrl.close(),
+      volumeCtrl.close(),
+      rateCtrl.close(),
       completedCtrl.close(),
       audioTracksCtrl.close(),
       subtitleTracksCtrl.close(),
@@ -1334,6 +1368,342 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(fakePlayer.openCalls.single.start, const Duration(seconds: 900));
+    },
+  );
+
+  testWidgets(
+    'VideoPlayerScreen hides fullscreen/maximize on Android and iOS while keeping other controls and mobile volume',
+    (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(360, 800);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(() => debugDefaultTargetPlatformOverride = null);
+
+      const companionChannel = MethodChannel('com.loriek.onlystream/companion');
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(companionChannel, (_) async => false);
+      addTearDown(
+        () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(companionChannel, null),
+      );
+
+      for (final platform in [TargetPlatform.android, TargetPlatform.iOS]) {
+        debugDefaultTargetPlatformOverride = platform;
+        final harness = _TestHarness();
+        await harness.init(isAndroid: platform == TargetPlatform.android);
+        final fakePlayer = FakePlayerAdapter();
+
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: AppTheme.darkTheme,
+            home: VideoPlayerScreen(
+              media: const MediaSummary(
+                id: 1396,
+                kind: MediaKind.tv,
+                title: 'Breaking Bad',
+              ),
+              season: 1,
+              episode: 1,
+              apiClient: harness.api,
+              configService: harness.config,
+              libraryService: harness.library,
+              torrentGuard: harness.torrentGuard,
+              playerFactory: () => fakePlayer,
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.byKey(const Key('player_fullscreen_button')), findsNothing);
+        expect(find.byIcon(Icons.fullscreen_rounded), findsNothing);
+        expect(find.byIcon(Icons.fullscreen_exit_rounded), findsNothing);
+
+        expect(find.byKey(const Key('player_cast_button')), findsOneWidget);
+        expect(find.byKey(const Key('player_zoom_fit_button')), findsOneWidget);
+        expect(find.byTooltip('Audio'), findsOneWidget);
+        expect(find.byTooltip('Sottotitoli'), findsOneWidget);
+        expect(find.byKey(const Key('player_volume_button')), findsOneWidget);
+        expect(find.byKey(const Key('player_speed_button')), findsOneWidget);
+
+        await tester.tap(find.byKey(const Key('player_volume_button')));
+        await tester.pumpAndSettle();
+        expect(find.byKey(const Key('player_volume_slider')), findsOneWidget);
+        expect(find.byKey(const Key('player_mute_button')), findsOneWidget);
+
+        await tester.tap(find.byKey(const Key('player_mute_button')));
+        await tester.pumpAndSettle();
+        expect(fakePlayer.setVolumes.last, 0.0);
+        expect(harness.config.playerVolume, 0.0);
+
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump();
+      }
+      debugDefaultTargetPlatformOverride = null;
+    },
+  );
+
+  testWidgets(
+    'DesktopWindowFrame renders custom titlebar on desktop, forwards caption actions, hides in fullscreen, and skips mobile',
+    (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(1280, 720);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      const channel = MethodChannel('com.loriek.onlystream/window_test');
+      final calls = <String>[];
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+        calls.add(call.method);
+        if (call.method == 'getWindowState') {
+          return {
+            'isMaximized': false,
+            'isFullscreen': false,
+            'isFocused': true,
+          };
+        }
+        return null;
+      });
+      addTearDown(
+        () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, null),
+      );
+
+      final windowController = DesktopWindowController(
+        channel: channel,
+        isSupportedOverride: true,
+      );
+      await windowController.init();
+      addTearDown(windowController.dispose);
+
+      final harness = _TestHarness();
+      await harness.init();
+      addTearDown(harness.dispose);
+
+      await tester.pumpWidget(
+        OnlyStreamApp(
+          apiClient: harness.api,
+          configService: harness.config,
+          libraryService: harness.library,
+          torrentGuard: harness.torrentGuard,
+          playerFactory: FakePlayerAdapter.new,
+          windowController: windowController,
+          loadHomeOnInit: false,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('desktop_window_titlebar')), findsOneWidget);
+      expect(find.byKey(const Key('window_minimize_button')), findsOneWidget);
+      expect(find.byKey(const Key('window_maximize_button')), findsOneWidget);
+      expect(find.byKey(const Key('window_close_button')), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('window_minimize_button')));
+      await tester.pump();
+      await tester.tap(find.byKey(const Key('window_maximize_button')));
+      await tester.pump();
+      await tester.tap(find.byKey(const Key('window_maximize_button')));
+      await tester.pump();
+      await tester.tap(find.byKey(const Key('window_close_button')));
+      await tester.pump();
+
+      expect(calls, [
+        'getWindowState',
+        'minimize',
+        'maximize',
+        'unmaximize',
+        'close',
+      ]);
+
+      // Simulate native fullscreen state transition hiding the titlebar
+      final encoded = channel.codec.encodeMethodCall(
+        const MethodCall('onWindowStateChanged', {
+          'isMaximized': false,
+          'isFullscreen': true,
+          'isFocused': true,
+        }),
+      );
+      await TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .handlePlatformMessage(channel.name, encoded, (_) {});
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('desktop_window_titlebar')), findsNothing);
+
+      // Mobile / unsupported platform does not render custom desktop titlebar
+      final mobileController = DesktopWindowController(
+        isSupportedOverride: false,
+      );
+      addTearDown(mobileController.dispose);
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.darkTheme,
+          home: DesktopWindowFrame(
+            controller: mobileController,
+            child: const Scaffold(body: Text('Mobile Body')),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('desktop_window_titlebar')), findsNothing);
+      expect(find.text('Mobile Body'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'Desktop VideoPlayerScreen provides inline volume, speed, fullscreen, and keyboard shortcuts',
+    (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(1280, 720);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      const channel = MethodChannel('com.loriek.onlystream/window_player_test');
+      final windowCalls = <(String, dynamic)>[];
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+        windowCalls.add((call.method, call.arguments));
+        if (call.method == 'getWindowState') {
+          return {
+            'isMaximized': false,
+            'isFullscreen': false,
+            'isFocused': true,
+          };
+        }
+        return null;
+      });
+      addTearDown(
+        () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, null),
+      );
+
+      final windowController = DesktopWindowController(
+        channel: channel,
+        isSupportedOverride: true,
+      );
+      await windowController.init();
+      addTearDown(windowController.dispose);
+
+      final harness = _TestHarness();
+      await harness.init();
+      addTearDown(harness.dispose);
+      final fakePlayer = FakePlayerAdapter();
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.darkTheme,
+          home: VideoPlayerScreen(
+            media: const MediaSummary(
+              id: 1396,
+              kind: MediaKind.tv,
+              title: 'Breaking Bad',
+            ),
+            season: 1,
+            episode: 1,
+            apiClient: harness.api,
+            configService: harness.config,
+            libraryService: harness.library,
+            torrentGuard: harness.torrentGuard,
+            playerFactory: () => fakePlayer,
+            windowController: windowController,
+            isDesktopOverride: true,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const Key('player_fullscreen_button')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const Key('desktop_play_pause_button')),
+        findsOneWidget,
+      );
+      expect(find.byKey(const Key('player_mute_button')), findsOneWidget);
+      expect(find.byKey(const Key('player_volume_slider')), findsOneWidget);
+      expect(find.byKey(const Key('player_volume_label')), findsOneWidget);
+      expect(find.byKey(const Key('player_speed_button')), findsOneWidget);
+      expect(find.byKey(const Key('player_shortcuts_button')), findsOneWidget);
+
+      // Mute and unmute via bottom dock button
+      await tester.tap(find.byKey(const Key('player_mute_button')));
+      await tester.pumpAndSettle();
+      expect(fakePlayer.setVolumes.last, 0.0);
+      expect(harness.config.playerVolume, 0.0);
+      expect(find.text('0%'), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('player_mute_button')));
+      await tester.pumpAndSettle();
+      expect(fakePlayer.setVolumes.last, 100.0);
+      expect(harness.config.playerVolume, 100.0);
+      expect(find.text('100%'), findsOneWidget);
+
+      // Drag volume slider to adjust volume and persist
+      await tester.drag(
+        find.byKey(const Key('player_volume_slider')),
+        const Offset(-36, 0),
+      );
+      await tester.pumpAndSettle();
+      expect(fakePlayer.setVolumes.last, lessThan(100.0));
+      expect(harness.config.playerVolume, lessThan(100.0));
+
+      // Change playback speed to 1.5x
+      await tester.tap(find.byKey(const Key('player_speed_button')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('1.5x'));
+      await tester.pumpAndSettle();
+      expect(fakePlayer.setRates.last, 1.5);
+
+      // Keyboard shortcuts: Space, ArrowRight, ArrowLeft, ArrowUp, ArrowDown, M, Z, F
+      final wasPaused = fakePlayer.paused;
+      await tester.sendKeyEvent(LogicalKeyboardKey.space);
+      await tester.pump();
+      expect(fakePlayer.paused, !wasPaused);
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+      await tester.pump();
+      final afterForward = fakePlayer.seeks.last;
+      expect(afterForward, const Duration(seconds: 10));
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+      await tester.pump();
+      expect(fakePlayer.seeks.last, Duration.zero);
+
+      final volBeforeUp = fakePlayer.setVolumes.last;
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(fakePlayer.setVolumes.last, closeTo(volBeforeUp + 5.0, 0.1));
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(fakePlayer.setVolumes.last, closeTo(volBeforeUp, 0.1));
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyM);
+      await tester.pump();
+      expect(fakePlayer.setVolumes.last, 0.0);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyM);
+      await tester.pump();
+      expect(fakePlayer.setVolumes.last, greaterThan(0.0));
+
+      expect(fakePlayer.lastFit, BoxFit.contain);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyZ);
+      await tester.pump();
+      expect(fakePlayer.lastFit, BoxFit.cover);
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyF);
+      await tester.pump();
+      expect(
+        windowCalls,
+        contains(('setFullscreen', true)),
+      );
+
+      // Disposing player while fullscreen exits fullscreen automatically
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump();
+      expect(
+        windowCalls,
+        contains(('setFullscreen', false)),
+      );
     },
   );
 }

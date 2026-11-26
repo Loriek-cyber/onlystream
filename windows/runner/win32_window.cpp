@@ -16,15 +16,23 @@ namespace {
 #define DWMWA_USE_IMMERSIVE_DARK_MODE 20
 #endif
 
-constexpr const wchar_t kWindowClassName[] = L"FLUTTER_RUNNER_WIN32_WINDOW";
+#ifndef DWMWA_WINDOW_CORNER_PREFERENCE
+#define DWMWA_WINDOW_CORNER_PREFERENCE 33
+#endif
 
-/// Registry key for app theme preference.
-///
-/// A value of 0 indicates apps should use dark mode. A non-zero or missing
-/// value indicates apps should use light mode.
-constexpr const wchar_t kGetPreferredBrightnessRegKey[] =
-  L"Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize";
-constexpr const wchar_t kGetPreferredBrightnessRegValue[] = L"AppsUseLightTheme";
+#ifndef DWMWA_BORDER_COLOR
+#define DWMWA_BORDER_COLOR 34
+#endif
+
+#ifndef DWMWCP_DONOTROUND
+#define DWMWCP_DONOTROUND 1
+#endif
+
+#ifndef DWMWCP_ROUND
+#define DWMWCP_ROUND 2
+#endif
+
+constexpr const wchar_t kWindowClassName[] = L"FLUTTER_RUNNER_WIN32_WINDOW";
 
 // The number of Win32Window objects that currently exist.
 static int g_active_window_count = 0;
@@ -97,7 +105,8 @@ const wchar_t* WindowClassRegistrar::GetWindowClass() {
     window_class.hInstance = GetModuleHandle(nullptr);
     window_class.hIcon =
         LoadIcon(window_class.hInstance, MAKEINTRESOURCE(IDI_APP_ICON));
-    window_class.hbrBackground = 0;
+    // Match OnlyStream #0B0B0D background to prevent white flash during resize.
+    window_class.hbrBackground = CreateSolidBrush(RGB(11, 11, 13));
     window_class.lpszMenuName = nullptr;
     window_class.lpfnWndProc = Win32Window::WndProc;
     RegisterClass(&window_class);
@@ -146,11 +155,139 @@ bool Win32Window::Create(const std::wstring& title,
 
   UpdateTheme(window);
 
+  const DWORD corner_pref = static_cast<DWORD>(DWMWCP_ROUND);
+  DwmSetWindowAttribute(window,
+                        static_cast<DWORD>(DWMWA_WINDOW_CORNER_PREFERENCE),
+                        &corner_pref, sizeof(corner_pref));
+
+  const COLORREF border_color = RGB(38, 38, 44);
+  DwmSetWindowAttribute(window, static_cast<DWORD>(DWMWA_BORDER_COLOR),
+                        &border_color, sizeof(border_color));
+
+  // Preserve native DWM shadow and rounded corners with custom client-area chrome.
+  const MARGINS margins = {0, 0, 1, 0};
+  DwmExtendFrameIntoClientArea(window, &margins);
+
+  SetWindowPos(window, nullptr, 0, 0, 0, 0,
+               SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER |
+                   SWP_NOACTIVATE);
+
   return OnCreate();
 }
 
 bool Win32Window::Show() {
   return ShowWindow(window_handle_, SW_SHOWNORMAL);
+}
+
+bool Win32Window::IsMaximized() const {
+  if (!window_handle_ || is_fullscreen_) {
+    return false;
+  }
+  return IsZoomed(window_handle_) != FALSE;
+}
+
+bool Win32Window::IsFullscreen() const {
+  return is_fullscreen_;
+}
+
+bool Win32Window::IsFocused() const {
+  return is_focused_;
+}
+
+void Win32Window::MinimizeWindow() {
+  if (!window_handle_) {
+    return;
+  }
+  ShowWindow(window_handle_, SW_MINIMIZE);
+}
+
+void Win32Window::MaximizeWindow() {
+  if (!window_handle_) {
+    return;
+  }
+  if (is_fullscreen_) {
+    SetFullscreen(false);
+  }
+  ShowWindow(window_handle_, SW_MAXIMIZE);
+}
+
+void Win32Window::UnmaximizeWindow() {
+  if (!window_handle_) {
+    return;
+  }
+  if (is_fullscreen_) {
+    SetFullscreen(false);
+  }
+  ShowWindow(window_handle_, SW_RESTORE);
+}
+
+void Win32Window::SetFullscreen(bool fullscreen) {
+  if (!window_handle_ || is_fullscreen_ == fullscreen) {
+    return;
+  }
+  if (fullscreen) {
+    saved_style_ =
+        static_cast<DWORD>(GetWindowLongPtr(window_handle_, GWL_STYLE));
+    saved_placement_.length = sizeof(WINDOWPLACEMENT);
+    GetWindowPlacement(window_handle_, &saved_placement_);
+
+    HMONITOR monitor =
+        MonitorFromWindow(window_handle_, MONITOR_DEFAULTTONEAREST);
+    MONITORINFO monitor_info{};
+    monitor_info.cbSize = sizeof(monitor_info);
+    if (GetMonitorInfo(monitor, &monitor_info)) {
+      is_fullscreen_ = true;
+      SetWindowLongPtr(
+          window_handle_, GWL_STYLE,
+          static_cast<LONG_PTR>(saved_style_ & ~WS_OVERLAPPEDWINDOW));
+      const RECT& monitor_rect = monitor_info.rcMonitor;
+      SetWindowPos(window_handle_, HWND_TOP, monitor_rect.left,
+                   monitor_rect.top, monitor_rect.right - monitor_rect.left,
+                   monitor_rect.bottom - monitor_rect.top,
+                   SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
+    }
+  } else {
+    is_fullscreen_ = false;
+    SetWindowLongPtr(window_handle_, GWL_STYLE,
+                     static_cast<LONG_PTR>(saved_style_));
+    SetWindowPlacement(window_handle_, &saved_placement_);
+    SetWindowPos(window_handle_, nullptr, 0, 0, 0, 0,
+                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOOWNERZORDER |
+                     SWP_FRAMECHANGED);
+  }
+
+  is_maximized_ = IsMaximized();
+  const DWORD corner_pref = (is_fullscreen_ || is_maximized_)
+      ? static_cast<DWORD>(DWMWCP_DONOTROUND)
+      : static_cast<DWORD>(DWMWCP_ROUND);
+  DwmSetWindowAttribute(window_handle_,
+                        static_cast<DWORD>(DWMWA_WINDOW_CORNER_PREFERENCE),
+                        &corner_pref, sizeof(corner_pref));
+  OnWindowStateChanged();
+}
+
+void Win32Window::CloseWindow() {
+  if (!window_handle_) {
+    return;
+  }
+  PostMessage(window_handle_, WM_CLOSE, 0, 0);
+}
+
+void Win32Window::StartDragging() {
+  if (!window_handle_ || is_fullscreen_) {
+    return;
+  }
+  ReleaseCapture();
+  SendMessage(window_handle_, WM_NCLBUTTONDOWN, HTCAPTION, 0);
+}
+
+void Win32Window::StartResizing(int hit_test) {
+  if (!window_handle_ || is_fullscreen_ || IsMaximized()) {
+    return;
+  }
+  ReleaseCapture();
+  SendMessage(window_handle_, WM_NCLBUTTONDOWN, static_cast<WPARAM>(hit_test),
+              0);
 }
 
 // static
@@ -187,6 +324,35 @@ Win32Window::MessageHandler(HWND hwnd,
       }
       return 0;
 
+    case WM_NCCALCSIZE: {
+      if (wparam == TRUE) {
+        if (is_fullscreen_) {
+          return 0;
+        }
+        if (IsZoomed(hwnd)) {
+          auto* params = reinterpret_cast<NCCALCSIZE_PARAMS*>(lparam);
+          HMONITOR monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+          MONITORINFO monitor_info{};
+          monitor_info.cbSize = sizeof(monitor_info);
+          if (GetMonitorInfo(monitor, &monitor_info)) {
+            params->rgrc[0] = monitor_info.rcWork;
+          }
+        }
+        return 0;
+      }
+      break;
+    }
+
+    case WM_GETMINMAXINFO: {
+      auto* mmi = reinterpret_cast<MINMAXINFO*>(lparam);
+      HMONITOR monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+      UINT dpi = FlutterDesktopGetDpiForMonitor(monitor);
+      double scale_factor = dpi / 96.0;
+      mmi->ptMinTrackSize.x = static_cast<LONG>(Scale(800, scale_factor));
+      mmi->ptMinTrackSize.y = static_cast<LONG>(Scale(540, scale_factor));
+      return 0;
+    }
+
     case WM_DPICHANGED: {
       auto newRectSize = reinterpret_cast<RECT*>(lparam);
       LONG newWidth = newRectSize->right - newRectSize->left;
@@ -197,6 +363,7 @@ Win32Window::MessageHandler(HWND hwnd,
 
       return 0;
     }
+
     case WM_SIZE: {
       RECT rect = GetClientArea();
       if (child_content_ != nullptr) {
@@ -204,14 +371,31 @@ Win32Window::MessageHandler(HWND hwnd,
         MoveWindow(child_content_, rect.left, rect.top, rect.right - rect.left,
                    rect.bottom - rect.top, TRUE);
       }
+      const bool next_maximized = IsZoomed(hwnd) != FALSE;
+      const DWORD corner_pref = (next_maximized || is_fullscreen_)
+          ? static_cast<DWORD>(DWMWCP_DONOTROUND)
+          : static_cast<DWORD>(DWMWCP_ROUND);
+      DwmSetWindowAttribute(
+          hwnd, static_cast<DWORD>(DWMWA_WINDOW_CORNER_PREFERENCE),
+          &corner_pref, sizeof(corner_pref));
+      if (next_maximized != is_maximized_) {
+        is_maximized_ = next_maximized;
+        OnWindowStateChanged();
+      }
       return 0;
     }
 
-    case WM_ACTIVATE:
+    case WM_ACTIVATE: {
       if (child_content_ != nullptr) {
         SetFocus(child_content_);
       }
+      const bool next_focused = (LOWORD(wparam) != WA_INACTIVE);
+      if (next_focused != is_focused_) {
+        is_focused_ = next_focused;
+        OnWindowStateChanged();
+      }
       return 0;
+    }
 
     case WM_DWMCOLORIZATIONCOLORCHANGED:
       UpdateTheme(hwnd);
@@ -272,17 +456,13 @@ void Win32Window::OnDestroy() {
   // No-op; provided for subclasses.
 }
 
-void Win32Window::UpdateTheme(HWND const window) {
-  DWORD light_mode;
-  DWORD light_mode_size = sizeof(light_mode);
-  LSTATUS result = RegGetValue(HKEY_CURRENT_USER, kGetPreferredBrightnessRegKey,
-                               kGetPreferredBrightnessRegValue,
-                               RRF_RT_REG_DWORD, nullptr, &light_mode,
-                               &light_mode_size);
+void Win32Window::OnWindowStateChanged() {
+  // No-op; provided for subclasses.
+}
 
-  if (result == ERROR_SUCCESS) {
-    BOOL enable_dark_mode = light_mode == 0;
-    DwmSetWindowAttribute(window, DWMWA_USE_IMMERSIVE_DARK_MODE,
-                          &enable_dark_mode, sizeof(enable_dark_mode));
-  }
+void Win32Window::UpdateTheme(HWND const window) {
+  BOOL enable_dark_mode = TRUE;
+  DwmSetWindowAttribute(window,
+                        static_cast<DWORD>(DWMWA_USE_IMMERSIVE_DARK_MODE),
+                        &enable_dark_mode, sizeof(enable_dark_mode));
 }

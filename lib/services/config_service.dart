@@ -107,6 +107,7 @@ class ConfigService extends ChangeNotifier {
   String _language = 'it';
   String _quality = 'auto';
   String _source = 'auto';
+  double _playerVolume = 100.0;
   List<ServerPreset> _presets = _defaultPresets();
 
   HealthStatus _status = const HealthStatus(isOnline: false);
@@ -123,6 +124,7 @@ class ConfigService extends ChangeNotifier {
   String get language => _language;
   String get quality => _quality;
   String get source => _source;
+  double get playerVolume => _playerVolume;
   List<ServerPreset> get presets => List.unmodifiable(_presets);
   HealthStatus get status => _status;
   bool get isChecking => _isChecking;
@@ -235,6 +237,10 @@ class ConfigService extends ChangeNotifier {
             if (src != null && validSources.contains(src)) {
               _source = src;
             }
+            final vol = data['player_volume'];
+            if (vol is num) {
+              _playerVolume = vol.toDouble().clamp(0.0, 100.0);
+            }
             if (data['presets'] is List) {
               final loaded = (data['presets'] as List)
                   .whereType<Map<String, dynamic>>()
@@ -270,6 +276,7 @@ class ConfigService extends ChangeNotifier {
         'language': _language,
         'quality': _quality,
         'source': _source,
+        'player_volume': _playerVolume,
         'presets': _presets.map((p) => p.toJson()).toList(),
       };
       await file.writeAsString(json.encode(payload));
@@ -363,6 +370,14 @@ class ConfigService extends ChangeNotifier {
     if (source != null && validSources.contains(source)) {
       _source = source;
     }
+    await _save();
+    notifyListeners();
+  }
+
+  Future<void> setPlayerVolume(double volume) async {
+    final clamped = volume.clamp(0.0, 100.0);
+    if ((_playerVolume - clamped).abs() < 0.01) return;
+    _playerVolume = clamped;
     await _save();
     notifyListeners();
   }

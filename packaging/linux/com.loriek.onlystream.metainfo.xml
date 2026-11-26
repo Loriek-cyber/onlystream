@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>com.loriek.onlystream</id>
+  <name>OnlyStream</name>
+  <summary>Minimal cross-platform streaming client for movies, TV shows, and anime</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <description>
+    <p>
+      OnlyStream is a minimal cinema streaming client for movies, TV series, and
+      anime powered by media_kit and the EasyStream API backend.
+    </p>
+  </description>
+  <launchable type="desktop-id">onlystream.desktop</launchable>
+  <url type="homepage">https://github.com/Loriek-cyber/onlystream</url>
+  <provides>
+    <binary>onlystream</binary>
+  </provides>
+  <categories>
+    <category>AudioVideo</category>
+    <category>Video</category>
+    <category>Player</category>
+  </categories>
+</component>

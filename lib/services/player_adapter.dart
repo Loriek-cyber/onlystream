@@ -30,6 +30,9 @@ abstract class PlayerAdapter {
   Stream<bool> get bufferingStream;
   Stream<Duration> get positionStream;
   Stream<Duration> get durationStream;
+  Stream<Duration> get bufferStream;
+  Stream<double> get volumeStream;
+  Stream<double> get rateStream;
   Stream<bool> get completedStream;
   Stream<List<PlayerTrackItem>> get audioTracksStream;
   Stream<List<PlayerTrackItem>> get subtitleTracksStream;
@@ -46,6 +49,8 @@ abstract class PlayerAdapter {
   Future<void> playOrPause();
   Future<void> pause();
   Future<void> seek(Duration position);
+  Future<void> setVolume(double volume);
+  Future<void> setRate(double rate);
   Future<void> setAudioTrack(PlayerTrackItem track);
   Future<void> setSubtitleTrack(PlayerTrackItem? track);
   Widget buildVideoView(BuildContext context, {BoxFit fit = BoxFit.contain});
@@ -79,6 +84,15 @@ class MediaKitPlayerAdapter implements PlayerAdapter {
 
   @override
   Stream<Duration> get durationStream => _player.stream.duration;
+
+  @override
+  Stream<Duration> get bufferStream => _player.stream.buffer;
+
+  @override
+  Stream<double> get volumeStream => _player.stream.volume;
+
+  @override
+  Stream<double> get rateStream => _player.stream.rate;
 
   @override
   Stream<bool> get completedStream => _player.stream.completed;
@@ -148,6 +162,14 @@ class MediaKitPlayerAdapter implements PlayerAdapter {
 
   @override
   Future<void> seek(Duration position) => _player.seek(position);
+
+  @override
+  Future<void> setVolume(double volume) =>
+      _player.setVolume(volume.clamp(0.0, 100.0));
+
+  @override
+  Future<void> setRate(double rate) =>
+      _player.setRate(rate.clamp(0.25, 4.0));
 
   @override
   Future<void> setAudioTrack(PlayerTrackItem track) {

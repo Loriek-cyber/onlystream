@@ -43,6 +43,35 @@ Available Android APKs per release:
 - `onlystream-x86_64.apk` (x86_64 devices / emulators)
 - `onlystream-universal.apk` (all ABIs)
 
+## Desktop (Linux & Windows)
+
+Release builds publish desktop packages alongside mobile artifacts:
+- **Linux**:
+  - `onlystream-linux-amd64.deb` (Debian / Ubuntu / Mint)
+  - `onlystream-linux-x86_64.rpm` (Fedora / RHEL / openSUSE)
+  - `onlystream-linux-x86_64.AppImage` (Portable AppImage)
+  - `onlystream-linux.tar.gz` (Portable bundle with `install.sh` for user-local `~/.local` install)
+- **Windows**:
+  - `onlystream-windows-setup.exe` (Inno Setup 6 installer)
+  - `onlystream-windows.zip` (Portable archive)
+
+Both Linux and Windows feature a custom monochrome cinema window frame (`com.loriek.onlystream/window`) with drag-to-move, double-click maximize/restore, 8-direction resizing, and fullscreen playback support.
+
+### Local Desktop Packaging (Linux)
+
+```bash
+flutter build linux --release
+./packaging/linux/package.sh --formats auto --output release-files
+```
+
+Use `--formats deb,rpm,appimage,tarball` to target specific package formats (requires `dpkg-deb`, `rpmbuild`, `appimagetool`, and `tar` respectively).
+
+### Desktop Player Shortcuts & Controls
+
+- **Volume**: Inline volume slider & mute button, mouse scroll wheel (`±5%`), or `↑` / `↓` and `M`
+- **Playback**: `Space` / `K` or single-click video (Play/Pause), `←` / `→` or `J` / `L` (`±10s`, hold `Shift` for `±30s`), `0`–`9` (seek 0%–90%), `[` / `]` (playback speed)
+- **View & Tracks**: `F` / `F11` / double-click video (Fullscreen), `Esc` (exit fullscreen / back), `Z` (Fit/Fill), `A` (Audio tracks), `C` (Subtitles), `N` (Next episode)
+
 ## Local Development
 
 ```bash

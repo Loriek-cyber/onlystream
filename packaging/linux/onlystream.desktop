@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=OnlyStream
+GenericName=Streaming Client
+Comment=Minimal cross-platform streaming client for movies, TV shows, and anime
+Exec=/usr/bin/onlystream %U
+Icon=onlystream
+Terminal=false
+Categories=AudioVideo;Video;Player;Network;
+StartupNotify=true
+StartupWMClass=com.loriek.onlystream
