@@ -46,6 +46,7 @@ class FakePlayerAdapter implements PlayerAdapter {
   final List<PlayerTrackItem?> selectedSubtitleTracks = [];
   bool disposed = false;
   bool paused = false;
+  BoxFit lastFit = BoxFit.contain;
 
   @override
   Stream<bool> get playingStream => playingCtrl.stream;
@@ -111,7 +112,8 @@ class FakePlayerAdapter implements PlayerAdapter {
   }
 
   @override
-  Widget buildVideoView(BuildContext context) {
+  Widget buildVideoView(BuildContext context, {BoxFit fit = BoxFit.contain}) {
+    lastFit = fit;
     return const ColoredBox(
       key: Key('fake_video_surface'),
       color: Colors.black,
@@ -1068,6 +1070,8 @@ void main() {
           json.encode({
             'sources': {
               'vixsrc_url': 'https://vixsrc.to',
+              'streamingunity_url': 'https://streamingunity.day',
+              'guardaserie_url': 'https://guardaseriex.help',
               'animeunity_url': 'https://animeunity.cx',
               'animeworld_url': 'https://www.animeworld.ac',
               'corsaro_url': 'https://icv.stremio-italia.eu',
@@ -1075,6 +1079,8 @@ void main() {
             },
             'defaults': {
               'vixsrc_url': 'https://vixsrc.to',
+              'streamingunity_url': 'https://streamingunity.day',
+              'guardaserie_url': 'https://guardaseriex.help',
               'animeunity_url': 'https://animeunity.cx',
               'animeworld_url': 'https://www.animeworld.ac',
               'corsaro_url': 'https://icv.stremio-italia.eu',
@@ -1091,6 +1097,8 @@ void main() {
             'sources': savedPatch,
             'defaults': {
               'vixsrc_url': 'https://vixsrc.to',
+              'streamingunity_url': 'https://streamingunity.day',
+              'guardaserie_url': 'https://guardaseriex.help',
               'animeunity_url': 'https://animeunity.cx',
               'animeworld_url': 'https://www.animeworld.ac',
               'corsaro_url': 'https://icv.stremio-italia.eu',
@@ -1116,7 +1124,7 @@ void main() {
     await tester.pumpAndSettle();
 
     await tester.scrollUntilVisible(
-      find.text('Salva link'),
+      find.widgetWithText(TextField, 'VixSrc'),
       200,
       scrollable: find.byType(Scrollable).first,
     );
@@ -1124,10 +1132,208 @@ void main() {
       find.widgetWithText(TextField, 'VixSrc'),
       'https://vixsrc.custom.example',
     );
+    await tester.enterText(
+      find.widgetWithText(TextField, 'StreamingUnity'),
+      'https://streamingunity.custom.example',
+    );
+    await tester.enterText(
+      find.widgetWithText(TextField, 'GuardaSerie'),
+      'https://guardaserie.custom.example',
+    );
+    await tester.scrollUntilVisible(
+      find.text('Salva link'),
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
     await tester.tap(find.text('Salva link'));
     await tester.pumpAndSettle();
 
     expect(savedPatch?['vixsrc_url'], 'https://vixsrc.custom.example');
+    expect(
+      savedPatch?['streamingunity_url'],
+      'https://streamingunity.custom.example',
+    );
+    expect(
+      savedPatch?['guardaserie_url'],
+      'https://guardaserie.custom.example',
+    );
     expect(find.text('Link base salvati sul server'), findsOneWidget);
   });
+
+  testWidgets(
+    'VideoPlayerScreen aligns spinner concentrically on Play/Pause, auto-hides in 3s, toggles Zoom/Fit, and fits S23 portrait without overflow',
+    (WidgetTester tester) async {
+      // Galaxy S23 portrait dimensions
+      tester.view.physicalSize = const Size(360, 800);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final harness = _TestHarness();
+      await harness.init();
+
+      final fakePlayer = FakePlayerAdapter();
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.darkTheme,
+          home: VideoPlayerScreen(
+            media: const MediaSummary(
+              id: 1396,
+              kind: MediaKind.tv,
+              title: 'Breaking Bad',
+            ),
+            season: 1,
+            episode: 1,
+            apiClient: harness.api,
+            configService: harness.config,
+            libraryService: harness.library,
+            torrentGuard: harness.torrentGuard,
+            playerFactory: () => fakePlayer,
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+
+      // Trigger buffering so both Play/Pause and CircularProgressIndicator are shown
+      fakePlayer.bufferingCtrl.add(true);
+      await tester.pump();
+      await tester.pump();
+
+      final playCenter = tester.getCenter(
+        find.byKey(const Key('player_play_pause_button')),
+      );
+      final spinnerCenter = tester.getCenter(
+        find.byKey(const Key('player_loading_indicator')),
+      );
+      expect((playCenter.dx - spinnerCenter.dx).abs(), lessThan(0.5));
+      expect((playCenter.dy - spinnerCenter.dy).abs(), lessThan(0.5));
+
+      fakePlayer.bufferingCtrl.add(false);
+      await tester.pump();
+      await tester.pump();
+
+      // Zoom/Fit toggle cycles contain <-> cover
+      expect(fakePlayer.lastFit, BoxFit.contain);
+      await tester.tap(find.byKey(const Key('player_zoom_fit_button')));
+      await tester.pump();
+      expect(fakePlayer.lastFit, BoxFit.cover);
+      await tester.tap(find.byKey(const Key('player_zoom_fit_button')));
+      await tester.pump();
+      expect(fakePlayer.lastFit, BoxFit.contain);
+
+      // Cast button is present in top bar
+      expect(find.byKey(const Key('player_cast_button')), findsOneWidget);
+
+      // Auto-hide after 3 seconds
+      double overlayOpacity() =>
+          tester.widget<AnimatedOpacity>(find.byType(AnimatedOpacity)).opacity;
+      expect(overlayOpacity(), 1.0);
+      await tester.pump(const Duration(seconds: 3));
+      await tester.pump(const Duration(milliseconds: 250));
+      expect(overlayOpacity(), 0.0);
+
+      // Tap when hidden shows controls and schedules 3s auto-hide
+      await tester.tapAt(const Offset(180, 220));
+      await tester.pump(const Duration(milliseconds: 250));
+      expect(overlayOpacity(), 1.0);
+      await tester.pump(const Duration(seconds: 3));
+      await tester.pump(const Duration(milliseconds: 250));
+      expect(overlayOpacity(), 0.0);
+
+      // Tap when visible on empty area immediately hides controls
+      await tester.tapAt(const Offset(180, 220));
+      await tester.pump(const Duration(milliseconds: 250));
+      expect(overlayOpacity(), 1.0);
+      await tester.tapAt(const Offset(180, 220));
+      await tester.pump(const Duration(milliseconds: 250));
+      expect(overlayOpacity(), 0.0);
+    },
+  );
+
+  testWidgets(
+    'Per-episode positions persist locally in LibraryService and auto-resume in VideoPlayerScreen',
+    (WidgetTester tester) async {
+      late Directory tempDir;
+      late _TestHarness harness;
+      late LibraryService reloadedLib;
+
+      await tester.runAsync(() async {
+        tempDir = await Directory.systemTemp.createTemp('onlystream_ep_');
+        harness = _TestHarness();
+        await harness.init();
+
+        final persistedLib = LibraryService(
+          apiClient: harness.api,
+          configService: harness.config,
+          storageDirOverride: tempDir,
+          persist: true,
+        );
+        await persistedLib.init(syncOnInit: false);
+
+        await persistedLib.reportProgress(
+          kind: MediaKind.tv,
+          id: 1396,
+          isAnime: false,
+          title: 'Breaking Bad',
+          season: 1,
+          episode: 1,
+          positionSecs: 320,
+          durationSecs: 2400,
+        );
+        await persistedLib.reportProgress(
+          kind: MediaKind.tv,
+          id: 1396,
+          isAnime: false,
+          title: 'Breaking Bad',
+          season: 1,
+          episode: 2,
+          positionSecs: 900,
+          durationSecs: 2500,
+        );
+        // Allow unawaited _saveCache() to flush to disk
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+
+        // Reload from disk into a fresh LibraryService instance
+        reloadedLib = LibraryService(
+          apiClient: harness.api,
+          configService: harness.config,
+          storageDirOverride: tempDir,
+          persist: true,
+        );
+        await reloadedLib.init(syncOnInit: false);
+      });
+      addTearDown(() async {
+        await tester.runAsync(() => tempDir.delete(recursive: true));
+      });
+
+      expect(reloadedLib.episodePositionSecs(MediaKind.tv, 1396, 1, 1), 320);
+      expect(reloadedLib.episodePositionSecs(MediaKind.tv, 1396, 1, 2), 900);
+
+      // Opening S1E2 directly in VideoPlayerScreen auto-resumes at 900s
+      final fakePlayer = FakePlayerAdapter();
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.darkTheme,
+          home: VideoPlayerScreen(
+            media: const MediaSummary(
+              id: 1396,
+              kind: MediaKind.tv,
+              title: 'Breaking Bad',
+            ),
+            season: 1,
+            episode: 2,
+            apiClient: harness.api,
+            configService: harness.config,
+            libraryService: reloadedLib,
+            torrentGuard: harness.torrentGuard,
+            playerFactory: () => fakePlayer,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(fakePlayer.openCalls.single.start, const Duration(seconds: 900));
+    },
+  );
 }

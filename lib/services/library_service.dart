@@ -104,6 +104,18 @@ class LibraryService extends ChangeNotifier {
     }
   }
 
+  LibraryItemView _mergeEpisodePositions(
+    LibraryItemView incoming,
+    LibraryItemView? existing,
+  ) {
+    if (existing == null || existing.episodePositions.isEmpty) {
+      return incoming;
+    }
+    final merged = Map<String, EpisodeProgress>.from(existing.episodePositions)
+      ..addAll(incoming.episodePositions);
+    return incoming.copyWith(episodePositions: merged);
+  }
+
   Future<void> refresh({String? lang}) async {
     _isSyncing = true;
     notifyListeners();
@@ -112,7 +124,30 @@ class LibraryService extends ChangeNotifier {
       final fetched = await _apiClient.getLibrary(
         lang: lang ?? _config.language,
       );
-      _snapshot = fetched;
+      final existingByKey = <String, LibraryItemView>{
+        for (final item in _snapshot.items) item.key: item,
+      };
+      final mergedItems = fetched.items
+          .map((item) => _mergeEpisodePositions(item, existingByKey[item.key]))
+          .toList();
+      _snapshot = LibrarySnapshot(
+        continueWatching: fetched.continueWatching
+            .map(
+              (item) => _mergeEpisodePositions(item, existingByKey[item.key]),
+            )
+            .toList(),
+        saved: fetched.saved
+            .map(
+              (item) => _mergeEpisodePositions(item, existingByKey[item.key]),
+            )
+            .toList(),
+        completed: fetched.completed
+            .map(
+              (item) => _mergeEpisodePositions(item, existingByKey[item.key]),
+            )
+            .toList(),
+        items: mergedItems,
+      );
       _isOffline = false;
       _lastError = null;
       await _saveCache();
@@ -148,6 +183,21 @@ class LibraryService extends ChangeNotifier {
     final entry = entryFor(kind, id);
     if (entry == null) return false;
     return entry.isEpisodeWatched(season, episode);
+  }
+
+  EpisodeProgress? episodeProgress(
+    MediaKind kind,
+    int id,
+    int season,
+    int episode,
+  ) {
+    final entry = entryFor(kind, id);
+    if (entry == null) return null;
+    return entry.progressForEpisode(season, episode);
+  }
+
+  int episodePositionSecs(MediaKind kind, int id, int season, int episode) {
+    return episodeProgress(kind, id, season, episode)?.positionSecs ?? 0;
   }
 
   void _applyLocalEntry(LibraryItemView updated) {
@@ -223,6 +273,7 @@ class LibraryService extends ChangeNotifier {
       positionSecs: existing?.positionSecs ?? 0,
       durationSecs: existing?.durationSecs ?? 0,
       watchedEpisodes: existing?.watchedEpisodes ?? const [],
+      episodePositions: existing?.episodePositions ?? const {},
       preferredLang: preferredLang ?? existing?.preferredLang ?? _config.language,
       updatedAt: DateTime.now().toUtc().toIso8601String(),
       nextEpisode: existing?.nextEpisode,
@@ -248,7 +299,7 @@ class LibraryService extends ChangeNotifier {
         preferredLang: preferredLang ?? _config.language,
       );
       _isOffline = false;
-      _applyLocalEntry(serverItem);
+      _applyLocalEntry(_mergeEpisodePositions(serverItem, optimistic));
     } catch (e) {
       _isOffline = true;
       _lastError = e.toString();
@@ -270,11 +321,24 @@ class LibraryService extends ChangeNotifier {
     String? preferredLang,
   }) async {
     final existing = entryFor(kind, id);
+    final nowIso = DateTime.now().toUtc().toIso8601String();
     final nearEnd =
         durationSecs > 0 && (positionSecs / durationSecs) >= 0.92;
     final nextStatus = (kind == MediaKind.movie && nearEnd)
         ? WatchStatus.completed
         : WatchStatus.watching;
+
+    final updatedPositions = Map<String, EpisodeProgress>.from(
+      existing?.episodePositions ?? const {},
+    );
+    if (kind == MediaKind.tv && season != null && episode != null) {
+      updatedPositions[LibraryItemView.episodeKey(season, episode)] =
+          EpisodeProgress(
+        positionSecs: positionSecs,
+        durationSecs: durationSecs,
+        updatedAt: nowIso,
+      );
+    }
 
     final optimistic = LibraryItemView(
       id: id,
@@ -290,8 +354,9 @@ class LibraryService extends ChangeNotifier {
       positionSecs: positionSecs,
       durationSecs: durationSecs,
       watchedEpisodes: existing?.watchedEpisodes ?? const [],
+      episodePositions: updatedPositions,
       preferredLang: preferredLang ?? existing?.preferredLang ?? _config.language,
-      updatedAt: DateTime.now().toUtc().toIso8601String(),
+      updatedAt: nowIso,
       nextEpisode: existing?.nextEpisode,
       hasNewEpisodes: existing?.hasNewEpisodes ?? false,
       newEpisodesCount: existing?.newEpisodesCount ?? 0,
@@ -317,7 +382,7 @@ class LibraryService extends ChangeNotifier {
         lang: _config.language,
       );
       _isOffline = false;
-      _applyLocalEntry(serverItem);
+      _applyLocalEntry(_mergeEpisodePositions(serverItem, optimistic));
     } catch (e) {
       _isOffline = true;
       _lastError = e.toString();
@@ -365,6 +430,7 @@ class LibraryService extends ChangeNotifier {
       positionSecs: existing?.positionSecs ?? 0,
       durationSecs: existing?.durationSecs ?? 0,
       watchedEpisodes: currentWatched,
+      episodePositions: existing?.episodePositions ?? const {},
       preferredLang: existing?.preferredLang ?? _config.language,
       updatedAt: DateTime.now().toUtc().toIso8601String(),
       nextEpisode: existing?.nextEpisode,
@@ -390,7 +456,7 @@ class LibraryService extends ChangeNotifier {
         lang: _config.language,
       );
       _isOffline = false;
-      _applyLocalEntry(serverItem);
+      _applyLocalEntry(_mergeEpisodePositions(serverItem, optimistic));
     } catch (e) {
       _isOffline = true;
       _lastError = e.toString();
@@ -412,6 +478,7 @@ class LibraryService extends ChangeNotifier {
   /// opening a title detail page.
   void mergeServerItem(LibraryItemView? item) {
     if (item == null) return;
-    _applyLocalEntry(item);
+    final existing = entryFor(item.kind, item.id);
+    _applyLocalEntry(_mergeEpisodePositions(item, existing));
   }
 }

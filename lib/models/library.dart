@@ -24,6 +24,37 @@ enum WatchStatus {
   }
 }
 
+class EpisodeProgress {
+  final int positionSecs;
+  final int durationSecs;
+  final String updatedAt;
+
+  const EpisodeProgress({
+    this.positionSecs = 0,
+    this.durationSecs = 0,
+    this.updatedAt = '',
+  });
+
+  double get progressRatio {
+    if (durationSecs <= 0) return 0.0;
+    return (positionSecs / durationSecs).clamp(0.0, 1.0);
+  }
+
+  factory EpisodeProgress.fromJson(Map<String, dynamic> json) {
+    return EpisodeProgress(
+      positionSecs: (json['position_secs'] as num?)?.round() ?? 0,
+      durationSecs: (json['duration_secs'] as num?)?.round() ?? 0,
+      updatedAt: json['updated_at']?.toString() ?? '',
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'position_secs': positionSecs,
+        'duration_secs': durationSecs,
+        if (updatedAt.isNotEmpty) 'updated_at': updatedAt,
+      };
+}
+
 class LibraryItemView {
   final int id;
   final MediaKind kind;
@@ -38,6 +69,7 @@ class LibraryItemView {
   final int positionSecs;
   final int durationSecs;
   final List<String> watchedEpisodes;
+  final Map<String, EpisodeProgress> episodePositions;
   final String? preferredLang;
   final String updatedAt;
   final NextEpisodeInfo? nextEpisode;
@@ -60,6 +92,7 @@ class LibraryItemView {
     this.positionSecs = 0,
     this.durationSecs = 0,
     this.watchedEpisodes = const [],
+    this.episodePositions = const {},
     this.preferredLang,
     this.updatedAt = '',
     this.nextEpisode,
@@ -68,6 +101,9 @@ class LibraryItemView {
     this.latestAiredSeason,
     this.latestAiredEpisode,
   });
+
+  static String episodeKey(int season, int episode) =>
+      'S${season.toString().padLeft(2, '0')}E${episode.toString().padLeft(2, '0')}';
 
   String get key => '${kind.wireValue}:$id';
 
@@ -83,6 +119,34 @@ class LibraryItemView {
     if (season == null || episode == null) return null;
     return 'S$season · E$episode';
   }
+
+  EpisodeProgress? progressForEpisode(int season, int episode) {
+    final direct = episodePositions[episodeKey(season, episode)];
+    if (direct != null) return direct;
+    final padded =
+        'S${season.toString().padLeft(2, '0')}E${episode.toString().padLeft(2, '0')}';
+    final fromPadded = episodePositions[padded];
+    if (fromPadded != null) return fromPadded;
+    for (final entry in episodePositions.entries) {
+      final lower = entry.key.trim().toLowerCase();
+      if (lower == 's${season}e$episode' || lower == padded.toLowerCase()) {
+        return entry.value;
+      }
+    }
+    if (currentSeason == season &&
+        currentEpisode == episode &&
+        positionSecs > 0) {
+      return EpisodeProgress(
+        positionSecs: positionSecs,
+        durationSecs: durationSecs,
+        updatedAt: updatedAt,
+      );
+    }
+    return null;
+  }
+
+  int positionForEpisode(int season, int episode) =>
+      progressForEpisode(season, episode)?.positionSecs ?? 0;
 
   bool isEpisodeWatched(int season, int episode) {
     final candidates = {
@@ -110,6 +174,7 @@ class LibraryItemView {
     int? positionSecs,
     int? durationSecs,
     List<String>? watchedEpisodes,
+    Map<String, EpisodeProgress>? episodePositions,
     String? preferredLang,
     String? updatedAt,
     NextEpisodeInfo? nextEpisode,
@@ -132,6 +197,7 @@ class LibraryItemView {
       positionSecs: positionSecs ?? this.positionSecs,
       durationSecs: durationSecs ?? this.durationSecs,
       watchedEpisodes: watchedEpisodes ?? this.watchedEpisodes,
+      episodePositions: episodePositions ?? this.episodePositions,
       preferredLang: preferredLang ?? this.preferredLang,
       updatedAt: updatedAt ?? this.updatedAt,
       nextEpisode: nextEpisode ?? this.nextEpisode,
@@ -143,6 +209,21 @@ class LibraryItemView {
   }
 
   factory LibraryItemView.fromJson(Map<String, dynamic> json) {
+    final rawEpPositions = json['episode_positions'];
+    final parsedEpPositions = <String, EpisodeProgress>{};
+    if (rawEpPositions is Map) {
+      for (final entry in rawEpPositions.entries) {
+        if (entry.value is Map<String, dynamic>) {
+          parsedEpPositions[entry.key.toString()] =
+              EpisodeProgress.fromJson(entry.value as Map<String, dynamic>);
+        } else if (entry.value is Map) {
+          parsedEpPositions[entry.key.toString()] = EpisodeProgress.fromJson(
+            Map<String, dynamic>.from(entry.value as Map),
+          );
+        }
+      }
+    }
+
     return LibraryItemView(
       id: (json['id'] as num?)?.toInt() ?? 0,
       kind: MediaKind.fromWire(json['kind'] as String?),
@@ -160,6 +241,7 @@ class LibraryItemView {
               ?.map((e) => e.toString())
               .toList() ??
           const [],
+      episodePositions: parsedEpPositions,
       preferredLang: json['preferred_lang'] as String?,
       updatedAt: json['updated_at']?.toString() ?? '',
       nextEpisode: json['next_episode'] is Map<String, dynamic>
@@ -188,6 +270,9 @@ class LibraryItemView {
         'position_secs': positionSecs,
         'duration_secs': durationSecs,
         'watched_episodes': watchedEpisodes,
+        'episode_positions': episodePositions.map(
+          (k, v) => MapEntry(k, v.toJson()),
+        ),
         if (preferredLang != null) 'preferred_lang': preferredLang,
         'updated_at': updatedAt,
         if (nextEpisode != null) 'next_episode': nextEpisode!.toJson(),

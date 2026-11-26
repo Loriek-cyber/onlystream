@@ -44,6 +44,8 @@ class ServerPreset {
 
 class ProviderUrls {
   final String vixsrcUrl;
+  final String streamingunityUrl;
+  final String guardaserieUrl;
   final String animeunityUrl;
   final String animeworldUrl;
   final String corsaroUrl;
@@ -51,6 +53,8 @@ class ProviderUrls {
 
   const ProviderUrls({
     required this.vixsrcUrl,
+    this.streamingunityUrl = '',
+    this.guardaserieUrl = '',
     required this.animeunityUrl,
     required this.animeworldUrl,
     required this.corsaroUrl,
@@ -60,6 +64,8 @@ class ProviderUrls {
   factory ProviderUrls.fromJson(Map<String, dynamic> json) {
     return ProviderUrls(
       vixsrcUrl: json['vixsrc_url']?.toString() ?? '',
+      streamingunityUrl: json['streamingunity_url']?.toString() ?? '',
+      guardaserieUrl: json['guardaserie_url']?.toString() ?? '',
       animeunityUrl: json['animeunity_url']?.toString() ?? '',
       animeworldUrl: json['animeworld_url']?.toString() ?? '',
       corsaroUrl: json['corsaro_url']?.toString() ?? '',
@@ -69,6 +75,8 @@ class ProviderUrls {
 
   Map<String, dynamic> toJson() => {
     'vixsrc_url': vixsrcUrl,
+    'streamingunity_url': streamingunityUrl,
+    'guardaserie_url': guardaserieUrl,
     'animeunity_url': animeunityUrl,
     'animeworld_url': animeworldUrl,
     'corsaro_url': corsaroUrl,

@@ -438,11 +438,17 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                         children: [
                           FilledButton.icon(
                             onPressed: () {
-                              final resumeSecs = libraryEntry?.positionSecs ?? 0;
                               final targetSeason =
                                   libraryEntry?.currentSeason ?? _selectedSeason;
                               final targetEp = libraryEntry?.currentEpisode ??
                                   _selectedEpisode;
+                              final resumeSecs = isSeries
+                                  ? (libraryEntry?.positionForEpisode(
+                                        targetSeason,
+                                        targetEp,
+                                      ) ??
+                                      0)
+                                  : (libraryEntry?.positionSecs ?? 0);
                               _openPlayer(
                                 season: targetSeason,
                                 episode: targetEp,
@@ -726,11 +732,25 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                     ),
                     onPressed: () => _openMagnet(t),
                   ),
-                  onTap: () => _openPlayer(
-                    season: _selectedSeason,
-                    episode: _selectedEpisode,
-                    torrent: t,
-                  ),
+                  onTap: () {
+                    final entry = _library.entryFor(
+                      widget.summary.kind,
+                      widget.summary.id,
+                    );
+                    final resumeSecs = isSeries
+                        ? (entry?.positionForEpisode(
+                              _selectedSeason,
+                              _selectedEpisode,
+                            ) ??
+                            0)
+                        : (entry?.positionSecs ?? 0);
+                    _openPlayer(
+                      season: _selectedSeason,
+                      episode: _selectedEpisode,
+                      torrent: t,
+                      resumePositionSecs: resumeSecs,
+                    );
+                  },
                 );
               },
             ),
@@ -804,6 +824,15 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                         ep.episodeNumber,
                       ) ??
                       false);
+              final epProgress = libraryEntry?.progressForEpisode(
+                _selectedSeason,
+                ep.episodeNumber,
+              );
+              final epProgressRatio = isWatched
+                  ? 1.0
+                  : (epProgress?.progressRatio ?? 0.0);
+              final showProgressBar =
+                  epProgress != null && epProgress.positionSecs > 0;
 
               return Material(
                 color: AppColors.surface,
@@ -815,10 +844,12 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                 child: InkWell(
                   onTap: () {
                     setState(() => _selectedEpisode = ep.episodeNumber);
+                    final resumeSecs = epProgress?.positionSecs ?? 0;
                     _openPlayer(
                       season: _selectedSeason,
                       episode: ep.episodeNumber,
                       episodeTitle: ep.name,
+                      resumePositionSecs: resumeSecs,
                     );
                   },
                   child: Padding(
@@ -836,9 +867,32 @@ class _MediaDetailScreenState extends State<MediaDetailScreen> {
                               borderRadius: BorderRadius.circular(8),
                             ),
                             clipBehavior: Clip.antiAlias,
-                            child: MediaNetworkImage(
-                              url: ep.still ?? detail.backdrop,
-                              fallbackIcon: Icons.play_circle_outline_rounded,
+                            child: Stack(
+                              fit: StackFit.expand,
+                              children: [
+                                MediaNetworkImage(
+                                  url: ep.still ?? detail.backdrop,
+                                  fallbackIcon: Icons.play_circle_outline_rounded,
+                                ),
+                                if (showProgressBar)
+                                  Align(
+                                    alignment: Alignment.bottomCenter,
+                                    child: Container(
+                                      height: 3,
+                                      color: Colors.black54,
+                                      alignment: Alignment.centerLeft,
+                                      child: FractionallySizedBox(
+                                        widthFactor:
+                                            epProgressRatio > 0
+                                                ? epProgressRatio.clamp(0.04, 1.0)
+                                                : 0.04,
+                                        child: Container(
+                                          color: AppColors.accent,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                              ],
                             ),
                           ),
                         ),

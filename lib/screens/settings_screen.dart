@@ -18,6 +18,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
   late final ApiClient _apiClient;
   late final TextEditingController _urlController;
   final TextEditingController _vixsrcController = TextEditingController();
+  final TextEditingController _streamingunityController =
+      TextEditingController();
+  final TextEditingController _guardaserieController = TextEditingController();
   final TextEditingController _animeunityController = TextEditingController();
   final TextEditingController _animeworldController = TextEditingController();
   final TextEditingController _corsaroController = TextEditingController();
@@ -55,6 +58,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _config.removeListener(_onConfigChanged);
     _urlController.dispose();
     _vixsrcController.dispose();
+    _streamingunityController.dispose();
+    _guardaserieController.dispose();
     _animeunityController.dispose();
     _animeworldController.dispose();
     _corsaroController.dispose();
@@ -64,6 +69,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   void _syncSourceControllers(ProviderUrls urls) {
     _vixsrcController.text = urls.vixsrcUrl;
+    _streamingunityController.text = urls.streamingunityUrl;
+    _guardaserieController.text = urls.guardaserieUrl;
     _animeunityController.text = urls.animeunityUrl;
     _animeworldController.text = urls.animeworldUrl;
     _corsaroController.text = urls.corsaroUrl;
@@ -101,6 +108,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     try {
       final updated = await _apiClient.updateProviderSources({
         'vixsrc_url': _vixsrcController.text.trim(),
+        'streamingunity_url': _streamingunityController.text.trim(),
+        'guardaserie_url': _guardaserieController.text.trim(),
         'animeunity_url': _animeunityController.text.trim(),
         'animeworld_url': _animeworldController.text.trim(),
         'corsaro_url': _corsaroController.text.trim(),
@@ -629,6 +638,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     label: 'VixSrc',
                     hint: _sourcesConfig?.defaults.vixsrcUrl ?? 'https://vixsrc.to',
                     controller: _vixsrcController,
+                  ),
+                  const SizedBox(height: 10),
+                  _SourceUrlField(
+                    label: 'StreamingUnity',
+                    hint: _sourcesConfig?.defaults.streamingunityUrl ??
+                        'https://streamingunity.day',
+                    controller: _streamingunityController,
+                  ),
+                  const SizedBox(height: 10),
+                  _SourceUrlField(
+                    label: 'GuardaSerie',
+                    hint: _sourcesConfig?.defaults.guardaserieUrl ??
+                        'https://guardaseriex.help',
+                    controller: _guardaserieController,
                   ),
                   const SizedBox(height: 10),
                   _SourceUrlField(

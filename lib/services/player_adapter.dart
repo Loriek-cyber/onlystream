@@ -48,7 +48,7 @@ abstract class PlayerAdapter {
   Future<void> seek(Duration position);
   Future<void> setAudioTrack(PlayerTrackItem track);
   Future<void> setSubtitleTrack(PlayerTrackItem? track);
-  Widget buildVideoView(BuildContext context);
+  Widget buildVideoView(BuildContext context, {BoxFit fit = BoxFit.contain});
   Future<void> dispose();
 }
 
@@ -185,12 +185,12 @@ class MediaKitPlayerAdapter implements PlayerAdapter {
   }
 
   @override
-  Widget buildVideoView(BuildContext context) {
+  Widget buildVideoView(BuildContext context, {BoxFit fit = BoxFit.contain}) {
     return Video(
       controller: _videoController,
       controls: NoVideoControls,
       fill: AppColors.background,
-      fit: BoxFit.contain,
+      fit: fit,
     );
   }
 
